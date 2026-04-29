@@ -9,20 +9,22 @@ const connectDB = async () => {
   const cache = global._mongooseCache;
   const state = mongoose.connection.readyState;
 
-  if (state === 1) return; // connected
+  if (state === 1) return;
 
-  // Connection dropped — clear the stale resolved promise so we reconnect
   if (state === 0 || state === 3) {
     cache.conn = null;
     cache.promise = null;
   }
 
   if (!cache.promise) {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error('MONGODB_URI env var is missing');
+
     cache.promise = mongoose
-      .connect(process.env.MONGODB_URI, {
-        serverSelectionTimeoutMS: 10000,
-        socketTimeoutMS: 45000,
-        maxPoolSize: 10,
+      .connect(uri, {
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
+        socketTimeoutMS: 30000,
       })
       .then((m) => {
         cache.conn = m;
@@ -43,7 +45,7 @@ module.exports = async (req, res) => {
     await connectDB();
     app(req, res);
   } catch (err) {
-    console.error('DB connection error:', err);
-    res.status(500).json({ message: 'Database connection failed: ' + err.message });
+    console.error('DB connection error:', err.message);
+    res.status(500).json({ message: 'DB Error: ' + err.message });
   }
 };
