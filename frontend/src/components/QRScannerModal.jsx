@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, AlertTriangle, Repeat } from 'lucide-react';
+import { X, Camera, AlertTriangle, Repeat, Hash, ArrowRight } from 'lucide-react';
 
 export default function QRScannerModal({ isOpen, onClose, onResult, title = 'QR-kodni skanerlash' }) {
   const containerId = 'peak-qr-reader';
@@ -9,6 +9,7 @@ export default function QRScannerModal({ isOpen, onClose, onResult, title = 'QR-
   const [error, setError] = useState('');
   const [cameras, setCameras] = useState([]);
   const [activeCamera, setActiveCamera] = useState(null);
+  const [manualId, setManualId] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -63,6 +64,13 @@ export default function QRScannerModal({ isOpen, onClose, onResult, title = 'QR-
     if (next) setActiveCamera(next.id);
   };
 
+  const submitManual = () => {
+    const id = manualId.trim();
+    if (!id) return;
+    setManualId('');
+    onResult?.(id);
+  };
+
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -76,6 +84,30 @@ export default function QRScannerModal({ isOpen, onClose, onResult, title = 'QR-
               </button>
             )}
             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500"><X size={18} /></button>
+          </div>
+        </div>
+
+        {/* Manual ID input */}
+        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={manualId}
+                onChange={e => setManualId(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && submitManual()}
+                placeholder="ID kod orqali kirish (masalan: PF00123)"
+                className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-accent outline-none"
+                autoComplete="off"
+              />
+            </div>
+            <button
+              onClick={submitManual}
+              disabled={!manualId.trim()}
+              className="p-2 bg-accent hover:bg-accent-dark text-white rounded-lg disabled:opacity-40 transition-colors"
+            >
+              <ArrowRight size={16} />
+            </button>
           </div>
         </div>
 

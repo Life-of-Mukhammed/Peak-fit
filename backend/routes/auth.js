@@ -46,22 +46,35 @@ router.get('/me', auth, async (req, res) => {
 
 router.post('/seed', async (req, res) => {
   try {
-    const existing = await User.findOne({ login: 'admin' });
-    if (existing) return res.json({ message: 'Admin already exists' });
+    const results = [];
+    if (!await User.findOne({ login: 'admin' })) {
+      await new User({
+        name: 'Super', surname: 'Admin', login: 'admin', password: 'admin123',
+        role: 'superadmin',
+        permissions: { kassa: true, mijozlar: true, ombor: true, xodimlar: true, tariflar: true, hisobotlar: true, sozlamalar: true },
+      }).save();
+      results.push('admin yaratildi (login=admin, parol=admin123)');
+    } else { results.push('admin mavjud'); }
 
-    const admin = new User({
-      name: 'Super',
-      surname: 'Admin',
-      login: 'admin',
-      password: 'admin123',
-      role: 'superadmin',
-      permissions: {
-        kassa: true, mijozlar: true, ombor: true,
-        xodimlar: true, tariflar: true, hisobotlar: true, sozlamalar: true,
-      }
-    });
-    await admin.save();
-    res.json({ message: 'Admin created: login=admin, password=admin123' });
+    if (!await User.findOne({ login: 'manager' })) {
+      await new User({
+        name: 'Manager', surname: 'Birinchi', login: 'manager', password: 'manager123',
+        role: 'admin',
+        permissions: { kassa: true, mijozlar: true, ombor: true, xodimlar: false, tariflar: true, hisobotlar: true, sozlamalar: false },
+      }).save();
+      results.push('manager yaratildi (login=manager, parol=manager123)');
+    } else { results.push('manager mavjud'); }
+
+    if (!await User.findOne({ login: 'manager2' })) {
+      await new User({
+        name: 'Manager', surname: 'Ikkinchi', login: 'manager2', password: 'manager123',
+        role: 'admin',
+        permissions: { kassa: true, mijozlar: true, ombor: true, xodimlar: false, tariflar: true, hisobotlar: true, sozlamalar: false },
+      }).save();
+      results.push('manager2 yaratildi (login=manager2, parol=manager123)');
+    } else { results.push('manager2 mavjud'); }
+
+    res.json({ message: results.join('; ') });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -4,6 +4,7 @@ const path = require('path');
 const QRCode = require('qrcode');
 const PDFDocument = require('pdfkit');
 const Customer = require('../models/Customer');
+const Sale = require('../models/Sale');
 const auth = require('../middleware/auth');
 
 const storage = multer.diskStorage({
@@ -117,6 +118,29 @@ router.get('/:id/pdf', auth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
+});
+
+// Pay customer debt
+router.post('/:id/pay-debt', auth, async (req, res) => {
+  try {
+    const { amount, paymentMethod = 'cash' } = req.body;
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ message: 'Summa kiritilmagan' });
+    const customer = await Customer.findById(req.params.id);
+    if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
+    const pay = Math.min(Number(amount), customer.debt);
+    await Customer.findByIdAndUpdate(req.params.id, { $inc: { debt: -pay, totalPaid: pay } });
+    await Sale.create({
+      items: [],
+      customer: req.params.id,
+      total: pay,
+      paymentMethod,
+      saleType: 'debt_payment',
+      note: 'Qarz to\'lovi',
+      cashier: req.user.id,
+      branch: customer.branch || null,
+    });
+    res.json({ paid: pay, remaining: Math.max(0, customer.debt - pay) });
+  } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 module.exports = router;

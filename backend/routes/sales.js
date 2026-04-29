@@ -6,11 +6,10 @@ const auth = require('../middleware/auth');
 
 router.get('/', auth, async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, customerId } = req.query;
     let query = {};
-    if (from && to) {
-      query.createdAt = { $gte: new Date(from), $lte: new Date(to) };
-    }
+    if (from && to) query.createdAt = { $gte: new Date(from), $lte: new Date(to) };
+    if (customerId) query.customer = customerId;
     const sales = await Sale.find(query)
       .populate('customer', 'name surname customerId')
       .populate('cashier', 'name surname')

@@ -21,6 +21,7 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/branches', require('./routes/branches'));
 app.use('/api/services', require('./routes/services'));
 app.use('/api/attendance', require('./routes/attendance'));
+app.use('/api/smena', require('./routes/smena'));
 app.use('/api/admin', require('./routes/admin'));
 
 mongoose.connect(process.env.MONGODB_URI)

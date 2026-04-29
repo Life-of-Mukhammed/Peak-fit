@@ -4,9 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote, UserCheck,
   Calculator, ShoppingBag, Tag, ChevronRight, X, User,
-  History, Filter, ChevronLeft, AlertTriangle,
-  Wifi, Receipt, ScanLine, Check, CheckCircle2, Camera,
+  History, Wifi, Receipt, Check, CheckCircle2, Camera,
+  LogOut, Wallet,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import api from '../utils/api';
 import { formatMoney } from '../utils/format';
 import Modal from '../components/Modal';
@@ -14,41 +15,16 @@ import QRScannerModal from '../components/QRScannerModal';
 import { useBranch } from '../context/BranchContext';
 import { useTariffs } from '../context/TariffsContext';
 
-const PAGE_SIZE = 6;
-
-function customerStatus(c) {
-  if (c.frozen) return 'frozen';
-  const t = c.activeTariff;
-  if (t?.isActive && t.endDate && new Date(t.endDate) > new Date()) return 'active';
-  return 'expired';
-}
-
 function timeHM(d) {
   if (!d) return '';
   return new Date(d).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
 }
 
-function StatusPill({ kind }) {
-  const cfg = {
-    active:  { label: 'AKTIV',           dot: 'bg-emerald-500', bg: 'bg-emerald-50',  fg: 'text-emerald-700' },
-    frozen:  { label: 'MUZLATILGAN',     dot: 'bg-amber-500',   bg: 'bg-amber-50',    fg: 'text-amber-700' },
-    expired: { label: "MUDDATI O'TGAN",  dot: 'bg-rose-500',    bg: 'bg-rose-50',     fg: 'text-rose-700' },
-  }[kind] || { label: '—', dot: 'bg-slate-300', bg: 'bg-slate-100', fg: 'text-slate-500' };
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide ${cfg.bg} ${cfg.fg}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
-    </span>
-  );
-}
 
-function FeedEntry({ sale }) {
-  const c = sale.customer;
-  const isDebt = sale.paymentMethod === 'debt';
-  const planName = sale.tariff?.name || sale.items?.[0]?.name || 'Sotuv';
+function AttendanceEntry({ rec }) {
+  const c = rec.customer;
   return (
-    <div className={`flex items-start gap-3 p-3 rounded-xl border transition-colors
-      ${isDebt ? 'border-rose-100 bg-rose-50/40' : 'border-slate-100 hover:bg-slate-50'}`}>
+    <div className="flex items-start gap-3 p-3 rounded-xl border border-emerald-100 bg-emerald-50/40">
       <div className="relative flex-shrink-0">
         <div className="w-11 h-11 rounded-xl bg-slate-100 overflow-hidden flex items-center justify-center">
           {c?.photo
@@ -56,26 +32,19 @@ function FeedEntry({ sale }) {
             : <span className="text-slate-500 font-bold text-sm">{c?.name?.[0] || '?'}{c?.surname?.[0] || ''}</span>
           }
         </div>
-        <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white
-          ${isDebt ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+        <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white bg-emerald-500" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="font-semibold text-slate-900 text-sm truncate">{c ? `${c.name} ${c.surname}` : 'Mijozsiz'}</div>
-            <div className="text-xs text-slate-400 truncate">
-              {c?.customerId ? `ID: ${c.customerId} · ` : ''}{planName}
-            </div>
+            <div className="font-semibold text-slate-900 text-sm truncate">{c ? `${c.name} ${c.surname}` : '—'}</div>
+            <div className="text-xs text-slate-400 truncate">{c?.customerId ? `ID: ${c.customerId}` : ''}</div>
           </div>
-          <span className="text-[11px] text-slate-400 whitespace-nowrap">{timeHM(sale.createdAt)}</span>
+          <span className="text-[11px] text-slate-400 whitespace-nowrap">{timeHM(rec.time)}</span>
         </div>
         <div className="mt-1.5 flex items-center gap-1.5">
-          {isDebt ? (
-            <span className="text-[10px] font-bold tracking-wide bg-rose-500 text-white px-2 py-0.5 rounded">QARZ</span>
-          ) : (
-            <span className="text-[10px] font-bold tracking-wide bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">RUXSAT BERILDI</span>
-          )}
-          <span className="text-[11px] text-slate-400">{formatMoney(sale.total)}</span>
+          <span className="text-[10px] font-bold tracking-wide bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">KELDI</span>
+          {rec.source === 'qr' && <span className="text-[10px] text-slate-400">QR</span>}
         </div>
       </div>
     </div>
@@ -88,16 +57,16 @@ export default function Kassa() {
   const { tariffs } = useTariffs();
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
-  const [recentSales, setRecentSales] = useState([]);
-  const [attendance, setAttendance] = useState([]);    // today's attendance records
+  const [attendance, setAttendance] = useState([]);
   const [attSearch, setAttSearch] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [justArrived, setJustArrived] = useState(null); // post-scan flash
-  const [marking, setMarking] = useState(null);         // customerId being marked
-
-  const [tab, setTab] = useState('all');             // all | debtors | archive
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const [justArrived, setJustArrived] = useState(null);
+  const [marking, setMarking] = useState(null);
+  const [leaving, setLeaving] = useState(null);
+  const [debtPayModal, setDebtPayModal] = useState(null); // { customer }
+  const [debtPayMethod, setDebtPayMethod] = useState('cash');
+  const [debtPayAmount, setDebtPayAmount] = useState('');
+  const [debtPayLoading, setDebtPayLoading] = useState(false);
 
   // Register (always-visible inline section)
   const [cart, setCart] = useState([]);
@@ -125,15 +94,13 @@ export default function Kassa() {
   const fetchAll = async () => {
     try {
       const branchParam = selectedBranch?._id ? `?branchId=${selectedBranch._id}` : '';
-      const [c, p, s, a] = await Promise.all([
+      const [c, p, a] = await Promise.all([
         api.get('/customers'),
         api.get('/products'),
-        api.get('/sales'),
         api.get(`/attendance/today${branchParam}`),
       ]);
       setCustomers(c.data);
       setProducts(p.data);
-      setRecentSales(s.data.slice(0, 30));
       setAttendance(a.data);
     } catch { /* silent */ }
   };
@@ -191,29 +158,34 @@ export default function Kassa() {
     }
   };
 
-  // ----- Filters / pagination -----
-  const filteredCustomers = useMemo(() => {
-    let list = customers;
-    if (tab === 'debtors') list = list.filter(c => c.debt > 0);
-    if (tab === 'archive') list = list.filter(c => customerStatus(c) !== 'active');
-    if (search.trim()) {
-      const s = search.toLowerCase();
-      list = list.filter(c =>
-        `${c.name} ${c.surname} ${c.phone || ''} ${c.customerId || ''}`.toLowerCase().includes(s)
-      );
-    }
-    return list;
-  }, [customers, tab, search]);
+  const markLeft = async (customer, attId) => {
+    setLeaving(customer._id);
+    try {
+      await api.delete(`/attendance/${attId}`);
+      setAttendance(prev => prev.filter(r => r._id !== attId));
+      toast(`${customer.name} ketdi`);
+    } catch { toast.error('Xato'); }
+    finally { setLeaving(null); }
+  };
 
-  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / PAGE_SIZE));
-  const pageItems = filteredCustomers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  useEffect(() => { setPage(1); }, [tab, search]);
+  const openDebtPay = (customer) => {
+    setDebtPayModal({ customer });
+    setDebtPayAmount(String(customer.debt));
+    setDebtPayMethod('cash');
+  };
 
-  const tabCounts = useMemo(() => ({
-    all: customers.length,
-    debtors: customers.filter(c => c.debt > 0).length,
-    archive: customers.filter(c => customerStatus(c) !== 'active').length,
-  }), [customers]);
+  const handleDebtPay = async () => {
+    const amount = Number(debtPayAmount);
+    if (!amount || amount <= 0) { toast.error('Summa kiriting'); return; }
+    setDebtPayLoading(true);
+    try {
+      const res = await api.post(`/customers/${debtPayModal.customer._id}/pay-debt`, { amount, paymentMethod: debtPayMethod });
+      toast.success(`${formatMoney(res.data.paid)} to'landi`);
+      setDebtPayModal(null);
+      fetchAll();
+    } catch (err) { toast.error(err.response?.data?.message || 'Xato'); }
+    finally { setDebtPayLoading(false); }
+  };
 
   // ----- Register modal handlers -----
   useEffect(() => {
@@ -305,209 +277,167 @@ export default function Kassa() {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-12 gap-5">
-      {/* ======================  LEFT — Mijozlar Bazasi  ====================== */}
-      <section className="col-span-12 lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
-        {/* Header row */}
-        <div className="px-5 py-4 flex items-center gap-4 flex-wrap border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900 leading-tight">
-            Mijozlar<br />Bazasi
-          </h2>
+      {/* ====  Two-column: Bugungi tashriflar (left) + Kirish Lenta (right)  ==== */}
+      <div className="grid grid-cols-12 gap-5" style={{ minHeight: 520 }}>
 
-          {/* Tabs */}
-          <div className="flex bg-slate-100 rounded-xl p-1 ml-auto md:ml-0">
-            {[
-              { key: 'all',     label: 'Barchasi' },
-              { key: 'debtors', label: 'Qarzdorlar' },
-              { key: 'archive', label: 'Arxiv' },
-            ].map(t => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all
-                  ${tab === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                {t.label}
-                {tabCounts[t.key] > 0 && (
-                  <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-bold
-                    ${tab === t.key ? 'bg-accent/15 text-accent-dark' : 'bg-slate-200 text-slate-500'}`}>
-                    {tabCounts[t.key]}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Right summary */}
-          <div className="ml-auto flex items-center gap-3">
-            <div className="text-right">
-              <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Jami<br />mijozlar</div>
+        {/* LEFT — Bugungi tashriflar */}
+        <section className="col-span-12 lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <CheckCircle2 size={18} className="text-emerald-500" />
+              </span>
+              <div>
+                <h3 className="font-bold text-slate-900">Bugungi tashriflar</h3>
+                <p className="text-xs text-slate-500">
+                  Bugun <span className="font-semibold text-emerald-600">{attendedCount}</span> / {customers.length} ta mijoz keldi
+                </p>
+              </div>
             </div>
-            <div className="text-2xl font-extrabold text-slate-900 tabular-nums">{customers.length.toLocaleString('uz-UZ')}</div>
-            <button className="p-2.5 border border-slate-200 hover:border-slate-300 rounded-xl text-slate-500 hover:text-slate-700 transition-colors">
-              <Filter size={16} />
-            </button>
+            <div className="ml-auto flex items-center gap-2 flex-1 max-w-xs min-w-[160px]">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={attSearch}
+                  onChange={e => setAttSearch(e.target.value)}
+                  placeholder="Qidirish..."
+                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-accent outline-none"
+                />
+                {attSearch && (
+                  <button onClick={() => setAttSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => setScannerOpen(true)}
+                className="flex items-center gap-1.5 bg-sidebar hover:bg-sidebar-hover text-white px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors"
+              >
+                <Camera size={14} /> QR
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Search bar */}
-        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/40">
-          <div className="relative max-w-sm">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Mijoz qidirish: ism, telefon, ID..."
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-accent focus:ring-2 focus:ring-accent/15 outline-none transition-all"
-            />
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="flex-1 overflow-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50/60 sticky top-0">
-              <tr>
-                <th className="text-left px-5 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Rasm / Mijoz</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Telefon raqam</th>
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Status / Tarif</th>
-                <th className="text-right px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Qarzdorlik</th>
-                <th className="text-center px-5 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Bugun</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map(c => {
-                const status = customerStatus(c);
-                return (
-                  <tr key={c._id} className="border-t border-slate-100 hover:bg-slate-50/60 transition-colors">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
-                          {c.photo
-                            ? <img src={c.photo} alt="" className="w-full h-full object-cover" />
-                            : <span className="text-slate-600 font-bold text-xs">{c.name[0]}{c.surname?.[0]}</span>
-                          }
-                        </div>
-                        <div className="min-w-0">
-                          <button
-                            onClick={() => navigate(`/mijozlar`)}
-                            className="font-bold text-slate-900 hover:text-accent text-[15px] truncate text-left"
-                          >
-                            {c.name} {c.surname}
-                          </button>
-                          <div className="text-xs text-slate-400 font-mono">ID: {c.customerId}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 text-sm text-slate-600 whitespace-nowrap">{c.phone || '—'}</td>
-                    <td className="px-4 py-3.5">
-                      <StatusPill kind={status} />
-                      <div className="text-xs text-slate-500 mt-1">{c.activeTariff?.tariff?.name || '—'}</div>
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      {c.debt > 0
-                        ? <span className="font-bold text-rose-500 text-[15px] tabular-nums">{formatMoney(c.debt)}</span>
-                        : <span className="text-slate-400 text-sm">0 UZS</span>
-                      }
-                    </td>
-                    <td className="px-5 py-3.5 text-center">
-                      {attendanceMap[c._id] ? (
-                        <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[11px] font-bold">
-                          <Check size={12} /> Keldi · {timeHM(attendanceMap[c._id].time)}
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => markAttendance(c)}
-                          disabled={marking === c._id}
-                          className="inline-flex items-center gap-1 bg-white border border-slate-200 hover:border-accent hover:bg-accent/5 hover:text-accent-dark text-slate-700 px-3 py-1 rounded-full text-[11px] font-semibold transition-colors disabled:opacity-50"
-                        >
-                          <Plus size={12} /> Keldi
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {pageItems.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-slate-400">
-                    <User size={36} className="mx-auto mb-2 opacity-30" />
-                    Mijozlar topilmadi
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
-          <div className="text-xs text-slate-400 uppercase tracking-wide">
-            {filteredCustomers.length === 0 ? '0' : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filteredCustomers.length)}`} dan {filteredCustomers.length.toLocaleString('uz-UZ')} ta mijoz ko'rsatilmoqda
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft size={15} />
-            </button>
-            {Array.from({ length: Math.min(totalPages, 3) }, (_, i) => {
-              const p = i + 1;
+          <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+            {attendanceList.map(c => {
+              const att = attendanceMap[c._id];
+              const flashed = justArrived?.customer?._id === c._id;
               return (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`w-9 h-9 flex items-center justify-center rounded-lg text-sm font-semibold transition-colors
-                    ${page === p ? 'bg-orange-500 text-white shadow-md' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                <div
+                  key={c._id}
+                  className={`relative border rounded-xl p-3 transition-all
+                    ${att ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 hover:border-slate-300'}
+                    ${flashed ? 'ring-2 ring-accent ring-offset-2 animate-pulse' : ''}`}
                 >
-                  {p}
-                </button>
+                  {/* Photo + name */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-slate-200 overflow-hidden flex items-center justify-center">
+                        {c.photo
+                          ? <img src={c.photo} alt="" className="w-full h-full object-cover" />
+                          : <span className="text-slate-600 font-bold text-[10px]">{c.name[0]}{c.surname?.[0]}</span>
+                        }
+                      </div>
+                      {att && (
+                        <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center" style={{ width: 14, height: 14 }}>
+                          <Check size={8} className="text-white" strokeWidth={3} />
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-slate-900 text-[11px] leading-tight truncate">{c.name} {c.surname}</div>
+                      {c.debt > 0 && (
+                        <div className="text-[10px] text-rose-500 font-bold">{formatMoney(c.debt)} qarz</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="space-y-1 mb-2">
+                    {att ? (
+                      <>
+                        <div className="w-full bg-emerald-500 text-white text-[10px] font-bold py-1 rounded-lg flex items-center justify-center gap-1">
+                          <Check size={10} /> Keldi · {timeHM(att.time)}
+                        </div>
+                        <button
+                          onClick={() => markLeft(c, att._id)}
+                          disabled={leaving === c._id}
+                          className="w-full bg-white border border-orange-200 hover:bg-orange-500 hover:text-white text-orange-500 text-[10px] font-semibold py-1 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                        >
+                          <LogOut size={10} /> Ketti
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => markAttendance(c)}
+                        disabled={marking === c._id}
+                        className="w-full bg-white border border-slate-200 hover:border-accent hover:bg-accent hover:text-white text-slate-700 text-[10px] font-semibold py-1 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                      >
+                        <Plus size={10} /> Keldi
+                      </button>
+                    )}
+                    {c.debt > 0 && (
+                      <button
+                        onClick={() => openDebtPay(c)}
+                        className="w-full bg-rose-50 border border-rose-200 hover:bg-rose-500 hover:text-white text-rose-600 text-[10px] font-semibold py-1 rounded-lg transition-colors flex items-center justify-center gap-1"
+                      >
+                        <Wallet size={10} /> Qarz to'lash
+                      </button>
+                    )}
+                  </div>
+
+                  {/* ID */}
+                  <div className="text-[9px] text-slate-400 font-mono text-center mb-1.5">{c.customerId}</div>
+
+                  {/* QR code */}
+                  <div className="flex justify-center">
+                    <QRCodeSVG
+                      value={JSON.stringify({ id: c._id, customerId: c.customerId, name: c.name })}
+                      size={72}
+                      level="M"
+                      includeMargin={false}
+                    />
+                  </div>
+                </div>
               );
             })}
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronRight size={15} />
-            </button>
+            {attendanceList.length === 0 && (
+              <div className="col-span-full text-center py-12 text-slate-400 text-sm">Mijoz topilmadi</div>
+            )}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ======================  RIGHT — Kirish Lenta (Live)  ====================== */}
-      <aside className="col-span-12 lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center">
-              <History size={17} className="text-orange-500" />
-            </span>
-            <h3 className="font-bold text-slate-900">Kirish Lenta <span className="text-slate-400 font-normal">(Live)</span></h3>
-          </div>
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            ONLINE
-          </span>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {recentSales.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
-              <Wifi size={36} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">Hozircha hech kim kirmagan</p>
+        {/* RIGHT — Kirish Lenta */}
+        <aside className="col-span-12 lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center">
+                <History size={17} className="text-orange-500" />
+              </span>
+              <h3 className="font-bold text-slate-900">Kirish Lenta <span className="text-slate-400 font-normal">(Bugun)</span></h3>
             </div>
-          ) : recentSales.map(s => <FeedEntry key={s._id} sale={s} />)}
-        </div>
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-slate-600">{attendance.length} ta keldi</span>
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                ONLINE
+              </span>
+            </div>
+          </div>
 
-        <button
-          onClick={() => navigate('/hisobotlar')}
-          className="border-t border-slate-100 py-3.5 text-center text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
-        >
-          Barchasini ko'rish
-        </button>
-      </aside>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {attendance.length === 0 ? (
+              <div className="text-center py-16 text-slate-400">
+                <Wifi size={36} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Hozircha hech kim kirmagan</p>
+              </div>
+            ) : (
+              [...attendance].sort((a, b) => new Date(b.time) - new Date(a.time)).map(rec => (
+                <AttendanceEntry key={rec._id} rec={rec} />
+              ))
+            )}
+          </div>
+        </aside>
       </div>
 
       {/* ======================  SOTUV MARKAZI (inline register)  ====================== */}
@@ -654,101 +584,12 @@ export default function Kassa() {
                 disabled={loading || cart.length === 0}
                 className="w-full bg-accent hover:bg-accent-dark text-white font-bold py-2.5 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm"
               >
-                {loading ? 'Saqlanmoqda...' : <>To'lovni qabul qilish <ChevronRight size={15} /></>}
+                {loading ? 'Saqlanmoqda...' : paymentMethod === 'debt'
+                  ? <>Qarzga yopish <ChevronRight size={15} /></>
+                  : <>To'lovni qabul qilish <ChevronRight size={15} /></>}
               </button>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* ======================  ATTENDANCE GRID — "Bugungi tashriflar"  ====================== */}
-      <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-              <CheckCircle2 size={18} className="text-emerald-500" />
-            </span>
-            <div>
-              <h3 className="font-bold text-slate-900">Bugungi tashriflar</h3>
-              <p className="text-xs text-slate-500">
-                Bugun <span className="font-semibold text-emerald-600">{attendedCount}</span> / {customers.length} ta mijoz keldi
-              </p>
-            </div>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2 flex-1 max-w-md min-w-[180px]">
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                value={attSearch}
-                onChange={e => setAttSearch(e.target.value)}
-                placeholder="Mijoz qidirish..."
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-accent outline-none"
-              />
-            </div>
-            <button
-              onClick={() => setScannerOpen(true)}
-              className="flex items-center gap-1.5 bg-sidebar hover:bg-sidebar-hover text-white px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors"
-            >
-              <Camera size={14} /> QR-skaner
-            </button>
-          </div>
-        </div>
-
-        <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-h-[440px] overflow-y-auto">
-          {attendanceList.map(c => {
-            const att = attendanceMap[c._id];
-            const flashed = justArrived?.customer?._id === c._id;
-            return (
-              <div
-                key={c._id}
-                className={`relative border rounded-xl p-3 transition-all
-                  ${att
-                    ? 'bg-emerald-50 border-emerald-200'
-                    : 'bg-white border-slate-200 hover:border-slate-300'}
-                  ${flashed ? 'ring-2 ring-accent ring-offset-2 animate-pulse' : ''}`}
-              >
-                <div className="flex items-center gap-2.5 mb-2.5">
-                  <div className="relative">
-                    <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden flex items-center justify-center flex-shrink-0">
-                      {c.photo
-                        ? <img src={c.photo} alt="" className="w-full h-full object-cover" />
-                        : <span className="text-slate-600 font-bold text-xs">{c.name[0]}{c.surname?.[0]}</span>
-                      }
-                    </div>
-                    {att && (
-                      <span className="absolute -bottom-1 -right-1 w-4.5 h-4.5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center" style={{ width: 18, height: 18 }}>
-                        <Check size={10} className="text-white" strokeWidth={3} />
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-slate-900 text-xs truncate">{c.name} {c.surname}</div>
-                    <div className="text-[10px] text-slate-400 font-mono">{c.customerId}</div>
-                  </div>
-                </div>
-
-                {att ? (
-                  <div className="w-full bg-emerald-500 text-white text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1">
-                    <Check size={12} /> Keldi · {timeHM(att.time)}
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => markAttendance(c)}
-                    disabled={marking === c._id}
-                    className="w-full bg-white border border-slate-200 hover:border-accent hover:bg-accent hover:text-white text-slate-700 text-xs font-semibold py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
-                  >
-                    <Plus size={12} /> Keldi
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          {attendanceList.length === 0 && (
-            <div className="col-span-full text-center py-12 text-slate-400 text-sm">
-              Mijoz topilmadi
-            </div>
-          )}
         </div>
       </section>
 
@@ -786,6 +627,65 @@ export default function Kassa() {
             ))}
           </div>
         </div>
+      </Modal>
+
+      {/* Qarz to'lash modali */}
+      <Modal isOpen={!!debtPayModal} onClose={() => setDebtPayModal(null)} title="Qarzni to'lash" size="sm">
+        {debtPayModal && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 rounded-xl p-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+                {debtPayModal.customer.photo
+                  ? <img src={debtPayModal.customer.photo} alt="" className="w-full h-full object-cover" />
+                  : <span className="font-bold text-rose-600 text-sm">{debtPayModal.customer.name[0]}</span>
+                }
+              </div>
+              <div>
+                <div className="font-bold text-slate-900">{debtPayModal.customer.name} {debtPayModal.customer.surname}</div>
+                <div className="text-xs text-rose-500 font-semibold">Jami qarz: {formatMoney(debtPayModal.customer.debt)}</div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 mb-1.5 block">To'lov miqdori (UZS)</label>
+              <input
+                type="number"
+                value={debtPayAmount}
+                onChange={e => setDebtPayAmount(e.target.value)}
+                placeholder="Summa"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-accent outline-none"
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600 mb-1.5 block">To'lov turi</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { key: 'cash', label: 'Naqd', icon: <Banknote size={15} /> },
+                  { key: 'card', label: 'Karta', icon: <CreditCard size={15} /> },
+                ].map(m => (
+                  <button
+                    key={m.key}
+                    onClick={() => setDebtPayMethod(m.key)}
+                    className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-colors
+                      ${debtPayMethod === m.key ? 'bg-sidebar text-white border-sidebar' : 'border-slate-200 text-slate-600 hover:border-slate-300 bg-white'}`}
+                  >
+                    {m.icon} {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={handleDebtPay}
+              disabled={debtPayLoading || !debtPayAmount || Number(debtPayAmount) <= 0}
+              className="w-full bg-accent hover:bg-accent-dark text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+            >
+              {debtPayLoading ? 'Saqlanmoqda...' : <><Check size={15} /> To'lovni qabul qilish</>}
+            </button>
+          </div>
+        )}
       </Modal>
 
       {/* Calculator */}

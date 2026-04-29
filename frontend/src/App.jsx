@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { BranchProvider } from './context/BranchContext';
 import { TariffsProvider } from './context/TariffsContext';
+import { SmenaProvider } from './context/SmenaContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Kassa from './pages/Kassa';
@@ -51,6 +52,7 @@ export default function App() {
     <AuthProvider>
       <BranchProvider>
         <TariffsProvider>
+        <SmenaProvider>
         <BrowserRouter>
           <Toaster
             position="top-right"
@@ -58,6 +60,7 @@ export default function App() {
           />
           <AppRoutes />
         </BrowserRouter>
+        </SmenaProvider>
         </TariffsProvider>
       </BranchProvider>
     </AuthProvider>
