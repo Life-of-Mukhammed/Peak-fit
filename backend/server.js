@@ -25,10 +25,12 @@ app.use('/api/smena', require('./routes/smena'));
 app.use('/api/admin', require('./routes/admin'));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('MongoDB connected');
-    app.listen(process.env.PORT, () => {
-      console.log(`Server running on port ${process.env.PORT}`);
-    });
-  })
+  .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
+
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+
+module.exports = app;
