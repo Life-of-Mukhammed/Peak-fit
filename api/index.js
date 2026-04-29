@@ -1,11 +1,33 @@
 const mongoose = require('mongoose');
 const app = require('../backend/server');
 
-let cachedDb = null;
+// Cache connection promise on the global object so it survives module re-evaluation
+// between warm Vercel invocations without losing the in-flight promise.
+if (!global._mongooseCache) {
+  global._mongooseCache = { conn: null, promise: null };
+}
 
 const connectDB = async () => {
-  if (cachedDb && mongoose.connection.readyState === 1) return;
-  cachedDb = await mongoose.connect(process.env.MONGODB_URI);
+  const cache = global._mongooseCache;
+  if (cache.conn && mongoose.connection.readyState === 1) return cache.conn;
+
+  if (!cache.promise) {
+    cache.promise = mongoose
+      .connect(process.env.MONGODB_URI, {
+        serverSelectionTimeoutMS: 8000,
+        socketTimeoutMS: 8000,
+      })
+      .then((m) => {
+        cache.conn = m;
+        return m;
+      })
+      .catch((err) => {
+        cache.promise = null; // allow retry on next request
+        throw err;
+      });
+  }
+
+  await cache.promise;
 };
 
 module.exports = async (req, res) => {
