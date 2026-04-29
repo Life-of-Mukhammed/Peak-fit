@@ -24,8 +24,6 @@ app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/smena', require('./routes/smena'));
 app.use('/api/admin', require('./routes/admin'));
 
-mongoose.set('bufferCommands', false);
-
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   mongoose.connect(process.env.MONGODB_URI)
