@@ -17,22 +17,55 @@ import Hisobotlar from './pages/Hisobotlar';
 import Sozlamalar from './pages/Sozlamalar';
 import Profil from './pages/Profil';
 
-function PrivateRoute({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return (
+import PlatformLayout from './fitos/PlatformLayout';
+import FitosViloyatlar from './fitos/pages/Viloyatlar';
+import FitosXizmatlar from './fitos/pages/Xizmatlar';
+import FitosTariflar from './fitos/pages/Tariflar';
+import FitosMijozlar from './fitos/pages/Mijozlar';
+import FitosTolovlar from './fitos/pages/Tolovlar';
+import FitosXabarlar from './fitos/pages/Xabarlar';
+import FitosDiller from './fitos/pages/Diller';
+import FitosSozlamalar from './fitos/pages/Sozlamalar';
+
+function Loading() {
+  return (
     <div className="flex items-center justify-center h-screen bg-sidebar">
-      <div className="text-accent text-2xl font-bold animate-pulse">Peak Fit</div>
+      <div className="text-accent text-2xl font-bold animate-pulse tracking-tight">Kivo</div>
     </div>
   );
-  return user ? children : <Navigate to="/login" />;
+}
+
+function PrivateRoute({ children, require }) {
+  const { user, loading } = useAuth();
+  if (loading) return <Loading />;
+  if (!user) return <Navigate to="/login" />;
+  if (require === 'platform' && user.role !== 'platformAdmin') return <Navigate to="/" />;
+  if (require === 'club' && user.role === 'platformAdmin') return <Navigate to="/fitos" />;
+  return children;
 }
 
 function AppRoutes() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) return <Loading />;
+
+  const homeFor = (u) => (u?.role === 'platformAdmin' ? '/fitos' : '/');
+
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
-      <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+      <Route path="/login" element={user ? <Navigate to={homeFor(user)} /> : <Login />} />
+
+      <Route path="/fitos" element={<PrivateRoute require="platform"><PlatformLayout /></PrivateRoute>}>
+        <Route index            element={<FitosViloyatlar />} />
+        <Route path="xizmatlar" element={<FitosXizmatlar />} />
+        <Route path="tariflar"  element={<FitosTariflar />} />
+        <Route path="mijozlar"  element={<FitosMijozlar />} />
+        <Route path="tolovlar"  element={<FitosTolovlar />} />
+        <Route path="xabarlar"  element={<FitosXabarlar />} />
+        <Route path="diller"    element={<FitosDiller />} />
+        <Route path="sozlamalar" element={<FitosSozlamalar />} />
+      </Route>
+
+      <Route path="/" element={<PrivateRoute require="club"><Layout /></PrivateRoute>}>
         <Route index element={<Kassa />} />
         <Route path="mijozlar" element={<Mijozlar />} />
         <Route path="ombor" element={<Ombor />} />

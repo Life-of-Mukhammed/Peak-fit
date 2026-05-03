@@ -47,6 +47,15 @@ router.get('/me', auth, async (req, res) => {
 router.post('/seed', async (req, res) => {
   try {
     const results = [];
+    if (!await User.findOne({ login: 'kivo' })) {
+      await new User({
+        name: 'Kivo', surname: 'Platform', login: 'kivo', password: 'kivo123',
+        role: 'platformAdmin',
+        permissions: { kassa: false, mijozlar: false, ombor: false, xodimlar: false, tariflar: false, hisobotlar: false, sozlamalar: false },
+      }).save();
+      results.push('Kivo platforma admini yaratildi (login=kivo, parol=kivo123)');
+    } else { results.push('Kivo platforma admini mavjud'); }
+
     if (!await User.findOne({ login: 'admin' })) {
       await new User({
         name: 'Super', surname: 'Admin', login: 'admin', password: 'admin123',

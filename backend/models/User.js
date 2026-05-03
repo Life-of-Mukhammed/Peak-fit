@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
   photo: String,
   login: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['superadmin', 'admin', 'cashier'], default: 'cashier' },
+  role: { type: String, enum: ['platformAdmin', 'superadmin', 'admin', 'cashier'], default: 'cashier' },
   permissions: {
     kassa: { type: Boolean, default: true },
     mijozlar: { type: Boolean, default: false },

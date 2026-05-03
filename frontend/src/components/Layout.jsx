@@ -51,7 +51,7 @@ export default function Layout() {
             </span>
             <a href="#" className="hover:text-slate-900 transition-colors">Yordam markazi</a>
           </div>
-          <div>© {new Date().getFullYear()} Peak Fit. Barcha huquqlar himoyalangan.</div>
+          <div>© {new Date().getFullYear()} Kivo. Barcha huquqlar himoyalangan.</div>
         </footer>
       </div>
     </div>

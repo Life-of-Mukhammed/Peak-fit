@@ -157,12 +157,12 @@ export default function Mijozlar() {
   };
 
   const shareWhatsApp = (c) => {
-    const text = encodeURIComponent(`*Peak Fit* mijozi\nID: ${c.customerId}\nIsm: ${c.name} ${c.surname}\nTel: ${c.phone}`);
+    const text = encodeURIComponent(`*Kivo* mijozi\nID: ${c.customerId}\nIsm: ${c.name} ${c.surname}\nTel: ${c.phone}`);
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   const shareTelegram = (c) => {
-    const text = encodeURIComponent(`Peak Fit mijozi\nID: ${c.customerId}\nIsm: ${c.name} ${c.surname}`);
+    const text = encodeURIComponent(`Kivo mijozi\nID: ${c.customerId}\nIsm: ${c.name} ${c.surname}`);
     window.open(`https://t.me/share/url?text=${text}`, '_blank');
   };
 

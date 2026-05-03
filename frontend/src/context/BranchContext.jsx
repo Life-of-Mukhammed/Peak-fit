@@ -27,7 +27,7 @@ export function BranchProvider({ children }) {
 
   // Refetch when the authenticated user changes (login / logout)
   useEffect(() => {
-    if (user) fetchBranches();
+    if (user && user.role !== 'platformAdmin') fetchBranches();
     else { setBranches([]); setSelected(null); localStorage.removeItem('selectedBranch'); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id || user?._id]);

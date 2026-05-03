@@ -12,7 +12,7 @@ export function SmenaProvider({ children }) {
   const [closeReport, setCloseReport] = useState(null);
 
   useEffect(() => {
-    if (user) fetchCurrent();
+    if (user && user.role !== 'platformAdmin') fetchCurrent();
     else { setCurrentSmena(null); setLoading(false); }
   }, [user]);
 

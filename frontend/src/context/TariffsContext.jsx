@@ -20,7 +20,7 @@ export function TariffsProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (user) refresh();
+    if (user && user.role !== 'platformAdmin') refresh();
     else { setTariffs([]); setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id || user?._id]);
