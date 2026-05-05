@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const auth = require('../middleware/auth');
+const auth = require('../middleware/clubAuth');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
 const Product = require('../models/Product');
@@ -10,23 +10,23 @@ const Attendance = require('../models/Attendance');
 const Branch = require('../models/Branch');
 const Settings = require('../models/Settings');
 
-// Wipe ALL business data — keeps only the current superadmin
 router.post('/reset', auth, async (req, res) => {
   try {
     const me = await User.findById(req.user.id);
     if (!me || me.role !== 'superadmin') {
       return res.status(403).json({ message: 'Faqat superadmin tozalashga ruxsat etilgan' });
     }
+    const club = me.club;
     await Promise.all([
-      Customer.deleteMany({}),
-      Product.deleteMany({}),
-      Tariff.deleteMany({}),
-      Sale.deleteMany({}),
-      Service.deleteMany({}),
-      Attendance.deleteMany({}),
-      Branch.deleteMany({}),
-      Settings.deleteMany({}),
-      User.deleteMany({ _id: { $ne: me._id } }),
+      Customer.deleteMany({ club }),
+      Product.deleteMany({ club }),
+      Tariff.deleteMany({ club }),
+      Sale.deleteMany({ club }),
+      Service.deleteMany({ club }),
+      Attendance.deleteMany({ club }),
+      Branch.deleteMany({ club }),
+      Settings.deleteMany({ club }),
+      User.deleteMany({ club, _id: { $ne: me._id } }),
     ]);
     res.json({ message: 'Barcha ma\'lumotlar tozalandi' });
   } catch (err) { res.status(500).json({ message: err.message }); }

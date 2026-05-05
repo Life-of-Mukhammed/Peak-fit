@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema({
   login: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, enum: ['platformAdmin', 'superadmin', 'admin', 'cashier'], default: 'cashier' },
+  club: { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformClub', default: null, index: true },
   permissions: {
     kassa: { type: Boolean, default: true },
     mijozlar: { type: Boolean, default: false },

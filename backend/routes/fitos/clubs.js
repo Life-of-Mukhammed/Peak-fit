@@ -1,11 +1,42 @@
 const router = require('express').Router();
+const crypto = require('crypto');
 const guard = require('../../middleware/platformAuth');
 const Club = require('../../models/PlatformClub');
 const Region = require('../../models/PlatformRegion');
+const User = require('../../models/User');
+const Customer = require('../../models/Customer');
+const Sale = require('../../models/Sale');
+const Service = require('../../models/Service');
+const Product = require('../../models/Product');
+const Branch = require('../../models/Branch');
+const Tariff = require('../../models/Tariff');
+const Settings = require('../../models/Settings');
+const Smena = require('../../models/Smena');
+const Attendance = require('../../models/Attendance');
 
 router.use(guard);
 
-// list with optional status & period filters
+function slugify(s = '') {
+  return s.toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 20) || 'club';
+}
+
+function genPassword() {
+  return crypto.randomBytes(9).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 10);
+}
+
+async function generateUniqueLogin(base) {
+  let login = base;
+  let n = 0;
+  while (await User.findOne({ login })) {
+    n += 1;
+    login = `${base}${n}`;
+  }
+  return login;
+}
+
 router.get('/', async (req, res) => {
   const q = {};
   if (req.query.status)        q.status        = req.query.status;
@@ -41,11 +72,32 @@ router.post('/', async (req, res) => {
       body.demoUntil = new Date(Date.now() + 7 * 86400000);
     }
     const c = await Club.create(body);
+
+    const baseLogin = await generateUniqueLogin(`${slugify(c.name)}_admin`);
+    const rawPassword = genPassword();
+    const adminUser = await new User({
+      name: (c.director || c.name || 'Admin').split(' ')[0] || 'Admin',
+      surname: (c.director || '').split(' ').slice(1).join(' ') || c.name,
+      phone: c.phone,
+      login: baseLogin,
+      password: rawPassword,
+      role: 'superadmin',
+      club: c._id,
+      permissions: { kassa: true, mijozlar: true, ombor: true, xodimlar: true, tariflar: true, hisobotlar: true, sozlamalar: true },
+    }).save();
+
+    await Branch.create({ club: c._id, name: (c.branches?.[0]?.name) || c.name, isMain: true });
+    await Settings.create({ club: c._id, gymName: c.name, phone: c.phone });
+
     const populated = await Club.findById(c._id)
       .populate('region', 'name')
       .populate('serviceType', 'name icon')
       .populate('tariff', 'name color price limits features');
-    res.json(populated);
+
+    res.json({
+      club: populated,
+      credentials: { login: adminUser.login, password: rawPassword },
+    });
   } catch (e) { res.status(400).json({ message: e.message }); }
 });
 
@@ -86,8 +138,34 @@ router.post('/:id/extend-demo', async (req, res) => {
   res.json(c);
 });
 
+router.post('/:id/reset-credentials', async (req, res) => {
+  try {
+    const club = await Club.findById(req.params.id);
+    if (!club) return res.status(404).json({ message: 'Klub topilmadi' });
+    const admin = await User.findOne({ club: club._id, role: 'superadmin' }).sort({ createdAt: 1 });
+    if (!admin) return res.status(404).json({ message: 'Admin foydalanuvchi topilmadi' });
+    const rawPassword = genPassword();
+    admin.password = rawPassword;
+    await admin.save();
+    res.json({ login: admin.login, password: rawPassword });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 router.delete('/:id', async (req, res) => {
-  await Club.findByIdAndDelete(req.params.id);
+  const clubId = req.params.id;
+  await Promise.all([
+    Customer.deleteMany({ club: clubId }),
+    Sale.deleteMany({ club: clubId }),
+    Service.deleteMany({ club: clubId }),
+    Product.deleteMany({ club: clubId }),
+    Branch.deleteMany({ club: clubId }),
+    Tariff.deleteMany({ club: clubId }),
+    Settings.deleteMany({ club: clubId }),
+    Smena.deleteMany({ club: clubId }),
+    Attendance.deleteMany({ club: clubId }),
+    User.deleteMany({ club: clubId }),
+  ]);
+  await Club.findByIdAndDelete(clubId);
   res.json({ ok: true });
 });
 

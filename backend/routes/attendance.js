@@ -1,15 +1,14 @@
 const router = require('express').Router();
 const Attendance = require('../models/Attendance');
 const Customer = require('../models/Customer');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/clubAuth');
 
 const today = () => new Date().toISOString().split('T')[0];
 
-// List today's attendance (optionally filtered by branch)
 router.get('/today', auth, async (req, res) => {
   try {
     const { branchId } = req.query;
-    const q = { date: today() };
+    const q = { club: req.user.club, date: today() };
     if (branchId) q.branch = branchId;
     const list = await Attendance.find(q)
       .populate('customer', 'name surname customerId photo phone activeTariff')
@@ -19,13 +18,12 @@ router.get('/today', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Mark a customer as attended today (idempotent)
 router.post('/', auth, async (req, res) => {
   try {
     const { customerId, source = 'manual', branch = null } = req.body;
     if (!customerId) return res.status(400).json({ message: 'customerId kerak' });
 
-    const customer = await Customer.findById(customerId);
+    const customer = await Customer.findOne({ _id: customerId, club: req.user.club });
     if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
 
     let record = await Attendance.findOne({ customer: customerId, date: today() });
@@ -34,6 +32,7 @@ router.post('/', auth, async (req, res) => {
       alreadyMarked = true;
     } else {
       record = await Attendance.create({
+        club: req.user.club,
         customer: customerId,
         date: today(),
         scannedBy: req.user.id,
@@ -51,7 +50,6 @@ router.post('/', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Lookup customer by QR payload (accepts JSON string OR plain customerId)
 router.post('/scan', auth, async (req, res) => {
   try {
     const { payload, branch = null } = req.body;
@@ -67,13 +65,14 @@ router.post('/scan', auth, async (req, res) => {
     }
     if (!lookup) return res.status(400).json({ message: 'QR formati noto\'g\'ri' });
 
-    const customer = await Customer.findOne(lookup);
+    const customer = await Customer.findOne({ ...lookup, club: req.user.club });
     if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
 
     let record = await Attendance.findOne({ customer: customer._id, date: today() });
     let alreadyMarked = !!record;
     if (!record) {
       record = await Attendance.create({
+        club: req.user.club,
         customer: customer._id,
         date: today(),
         scannedBy: req.user.id,
@@ -93,7 +92,8 @@ router.post('/scan', auth, async (req, res) => {
 
 router.delete('/:id', auth, async (req, res) => {
   try {
-    await Attendance.findByIdAndDelete(req.params.id);
+    const result = await Attendance.findOneAndDelete({ _id: req.params.id, club: req.user.club });
+    if (!result) return res.status(404).json({ message: 'Tashrif topilmadi' });
     res.json({ message: 'Tashrif o\'chirildi' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });

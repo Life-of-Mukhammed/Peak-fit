@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const tariffSchema = new mongoose.Schema({
+  club: { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformClub', required: true, index: true },
   name: { type: String, required: true },
   price: { type: Number, required: true },
   duration: { type: Number, required: true },

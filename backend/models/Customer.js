@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const customerSchema = new mongoose.Schema({
-  customerId: { type: String, unique: true },
+  club: { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformClub', required: true, index: true },
+  customerId: { type: String },
   name: { type: String, required: true },
   surname: { type: String, required: true },
   photo: String,
@@ -20,9 +21,11 @@ const customerSchema = new mongoose.Schema({
   frozen: { type: Boolean, default: false },
 }, { timestamps: true });
 
+customerSchema.index({ club: 1, customerId: 1 }, { unique: true });
+
 customerSchema.pre('save', async function(next) {
   if (!this.customerId) {
-    const count = await mongoose.model('Customer').countDocuments();
+    const count = await mongoose.model('Customer').countDocuments({ club: this.club });
     this.customerId = `PF${String(count + 1).padStart(5, '0')}`;
   }
   next();

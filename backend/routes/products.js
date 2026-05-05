@@ -2,7 +2,7 @@ const router = require('express').Router();
 const multer = require('multer');
 const path = require('path');
 const Product = require('../models/Product');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/clubAuth');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads')),
@@ -13,15 +13,13 @@ const upload = multer({ storage });
 router.get('/', auth, async (req, res) => {
   try {
     const { search } = req.query;
-    let query = {};
+    let query = { club: req.user.club };
     if (search) {
-      query = {
-        $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { barcode: { $regex: search, $options: 'i' } },
-          { type: { $regex: search, $options: 'i' } },
-        ]
-      };
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { barcode: { $regex: search, $options: 'i' } },
+        { type: { $regex: search, $options: 'i' } },
+      ];
     }
     const products = await Product.find(query).sort({ createdAt: -1 });
     res.json(products);
@@ -32,7 +30,7 @@ router.get('/', auth, async (req, res) => {
 
 router.get('/:id', auth, async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findOne({ _id: req.params.id, club: req.user.club });
     if (!product) return res.status(404).json({ message: 'Mahsulot topilmadi' });
     res.json(product);
   } catch (err) {
@@ -45,6 +43,7 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
     const data = JSON.parse(req.body.data || '{}');
     const product = new Product({
       ...data,
+      club: req.user.club,
       image: req.file ? `/uploads/${req.file.filename}` : null,
     });
     await product.save();
@@ -58,7 +57,13 @@ router.put('/:id', auth, upload.single('image'), async (req, res) => {
   try {
     const data = JSON.parse(req.body.data || '{}');
     if (req.file) data.image = `/uploads/${req.file.filename}`;
-    const product = await Product.findByIdAndUpdate(req.params.id, data, { new: true });
+    delete data.club;
+    const product = await Product.findOneAndUpdate(
+      { _id: req.params.id, club: req.user.club },
+      data,
+      { new: true }
+    );
+    if (!product) return res.status(404).json({ message: 'Mahsulot topilmadi' });
     res.json(product);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -67,7 +72,8 @@ router.put('/:id', auth, upload.single('image'), async (req, res) => {
 
 router.delete('/:id', auth, async (req, res) => {
   try {
-    await Product.findByIdAndDelete(req.params.id);
+    const result = await Product.findOneAndDelete({ _id: req.params.id, club: req.user.club });
+    if (!result) return res.status(404).json({ message: 'Mahsulot topilmadi' });
     res.json({ message: 'Mahsulot o\'chirildi' });
   } catch (err) {
     res.status(500).json({ message: err.message });

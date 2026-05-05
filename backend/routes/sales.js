@@ -2,12 +2,12 @@ const router = require('express').Router();
 const Sale = require('../models/Sale');
 const Product = require('../models/Product');
 const Customer = require('../models/Customer');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/clubAuth');
 
 router.get('/', auth, async (req, res) => {
   try {
     const { from, to, customerId } = req.query;
-    let query = {};
+    let query = { club: req.user.club };
     if (from && to) query.createdAt = { $gte: new Date(from), $lte: new Date(to) };
     if (customerId) query.customer = customerId;
     const sales = await Sale.find(query)
@@ -28,6 +28,7 @@ router.post('/', auth, async (req, res) => {
     const { items, tariff, customer, total, paymentMethod, saleType, note, branch } = req.body;
 
     const sale = new Sale({
+      club: req.user.club,
       items,
       tariff,
       customer,
@@ -41,11 +42,17 @@ router.post('/', auth, async (req, res) => {
 
     if (items && items.length > 0) {
       for (const item of items) {
-        await Product.findByIdAndUpdate(item.product, { $inc: { quantity: -item.quantity } });
+        await Product.findOneAndUpdate(
+          { _id: item.product, club: req.user.club },
+          { $inc: { quantity: -item.quantity } }
+        );
       }
     }
 
     if (customer) {
+      const customerDoc = await Customer.findOne({ _id: customer, club: req.user.club });
+      if (!customerDoc) return res.status(404).json({ message: 'Mijoz topilmadi' });
+
       if (paymentMethod === 'debt') {
         await Customer.findByIdAndUpdate(customer, { $inc: { debt: total } });
       } else {
@@ -54,7 +61,7 @@ router.post('/', auth, async (req, res) => {
 
       if (tariff) {
         const Tariff = require('../models/Tariff');
-        const tariffDoc = await Tariff.findById(tariff);
+        const tariffDoc = await Tariff.findOne({ _id: tariff, club: req.user.club });
         if (tariffDoc) {
           const startDate = new Date();
           const endDate = new Date();
@@ -84,7 +91,7 @@ router.get('/today', auth, async (req, res) => {
     const end = new Date();
     end.setHours(23, 59, 59, 999);
 
-    const sales = await Sale.find({ createdAt: { $gte: start, $lte: end } });
+    const sales = await Sale.find({ club: req.user.club, createdAt: { $gte: start, $lte: end } });
     const total = sales.reduce((sum, s) => sum + s.total, 0);
     res.json({ count: sales.length, total, sales });
   } catch (err) {

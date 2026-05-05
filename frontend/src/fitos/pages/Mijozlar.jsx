@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import {
   Building2, Phone, MapPin, Tag, Plus, Trash2, Pencil, Search,
   Lock, Unlock, Clock, Calendar, ShieldAlert, Users,
+  Copy, Check, KeyRound, RefreshCw,
 } from 'lucide-react';
 import { Card, Btn, IconBtn, Input, Select, Label, Modal, Empty, AddBtn, Stat, Badge, fmtUZ, fmtMoney } from '../ui';
 
@@ -28,6 +29,7 @@ export default function Mijozlar() {
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [credentials, setCredentials] = useState(null); // { clubName, login, password, isReset? }
 
   const load = async () => {
     setLoading(true);
@@ -69,11 +71,22 @@ export default function Mijozlar() {
 
   const save = async (data) => {
     try {
-      if (editing) await api.put(`/fitos/clubs/${editing._id}`, data);
-      else await api.post('/fitos/clubs', data);
-      toast.success(editing ? 'Yangilandi' : 'Yaratildi');
-      setModal(null); setEditing(null);
-      load();
+      if (editing) {
+        await api.put(`/fitos/clubs/${editing._id}`, data);
+        toast.success('Yangilandi');
+        setModal(null); setEditing(null);
+        load();
+      } else {
+        const res = await api.post('/fitos/clubs', data);
+        const created = res.data?.club || res.data;
+        const creds = res.data?.credentials;
+        toast.success('Yaratildi');
+        setModal(null); setEditing(null);
+        load();
+        if (creds) {
+          setCredentials({ clubName: created?.name || data.name, login: creds.login, password: creds.password });
+        }
+      }
     } catch (e) { toast.error(e.response?.data?.message || 'Xatolik'); }
   };
 
@@ -86,9 +99,17 @@ export default function Mijozlar() {
     load(); toast.success('Demo uzaytirildi');
   };
   const remove = async (c) => {
-    if (!confirm(`"${c.name}" klubini o‘chirasizmi?`)) return;
+    if (!confirm(`"${c.name}" klubini o‘chirasizmi? Bog‘liq foydalanuvchilar va ma'lumotlar ham o‘chiriladi.`)) return;
     await api.delete(`/fitos/clubs/${c._id}`);
     load(); toast.success('O‘chirildi');
+  };
+  const resetCreds = async (c) => {
+    if (!confirm(`"${c.name}" klub admini uchun yangi parol generatsiya qilinadi. Davom etilsinmi?`)) return;
+    try {
+      const res = await api.post(`/fitos/clubs/${c._id}/reset-credentials`);
+      setCredentials({ clubName: c.name, login: res.data.login, password: res.data.password, isReset: true });
+      toast.success('Parol yangilandi');
+    } catch (e) { toast.error(e.response?.data?.message || 'Xatolik'); }
   };
 
   const editRow = (c) => {
@@ -161,6 +182,7 @@ export default function Mijozlar() {
               onUnblock={() => unblock(c)}
               onExtend={() => extend(c)}
               onDelete={() => remove(c)}
+              onResetCreds={() => resetCreds(c)}
             />
           ))}
         </div>
@@ -177,11 +199,77 @@ export default function Mijozlar() {
           onSave={save}
         />
       )}
+
+      {credentials && (
+        <CredentialsModal
+          data={credentials}
+          onClose={() => setCredentials(null)}
+        />
+      )}
     </div>
   );
 }
 
-function ClubCard({ c, onEdit, onBlock, onUnblock, onExtend, onDelete }) {
+function CredentialsModal({ data, onClose }) {
+  const [copied, setCopied] = useState(null);
+  const copy = async (key, value) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1500);
+    } catch { toast.error('Nusxalash xatosi'); }
+  };
+  const copyBoth = () => copy('both', `Login: ${data.login}\nParol: ${data.password}`);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={data.isReset ? 'Yangi parol yaratildi' : 'Klub admini uchun login ma\'lumotlari'}
+      subtitle={data.clubName}
+      size="sm"
+      footer={<>
+        <Btn variant="outline" onClick={copyBoth}>{copied === 'both' ? 'Nusxalandi' : 'Hammasini nusxalash'}</Btn>
+        <Btn onClick={onClose}>Tushundim</Btn>
+      </>}
+    >
+      <div className="space-y-4">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-3">
+          <ShieldAlert size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-900 leading-relaxed">
+            <b>Bu parol faqat shu yerda ko‘rsatiladi.</b> Klub raxbariga yetkazing va bu oynani yopishdan oldin nusxalab oling.
+            Keyin parolni boshqa ko‘rib bo‘lmaydi (faqat yangidan generatsiya qilinadi).
+          </div>
+        </div>
+
+        <CredField label="Login" value={data.login} icon={KeyRound} copied={copied === 'login'} onCopy={() => copy('login', data.login)} />
+        <CredField label="Parol" value={data.password} icon={KeyRound} copied={copied === 'password'} onCopy={() => copy('password', data.password)} mono />
+      </div>
+    </Modal>
+  );
+}
+
+function CredField({ label, value, icon: Icon, copied, onCopy, mono }) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="flex items-center gap-2">
+        <div className={`flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 ${mono ? 'font-mono tracking-wide' : ''}`}>
+          {value}
+        </div>
+        <button
+          onClick={onCopy}
+          className={`p-2.5 rounded-xl border transition-all ${copied ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+          title="Nusxalash"
+        >
+          {copied ? <Check size={16} /> : <Copy size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ClubCard({ c, onEdit, onBlock, onUnblock, onExtend, onDelete, onResetCreds }) {
   const statusTone = { demo: 'amber', active: 'emerald', blocked: 'rose', expired: 'slate' }[c.status] || 'slate';
   const statusLabel = { demo: 'Demo', active: 'Aktiv', blocked: 'Bloklangan', expired: 'Tugagan' }[c.status] || c.status;
   const periodLabel = { demo: 'Demo', '1m': '1 oy', '3m': '3 oy', '6m': '6 oy', '12m': '12 oy', 'one-time': 'Bir martalik' }[c.paymentPeriod] || c.paymentPeriod;
@@ -234,6 +322,7 @@ function ClubCard({ c, onEdit, onBlock, onUnblock, onExtend, onDelete }) {
           ? <IconBtn icon={Unlock} color="emerald" onClick={onUnblock} />
           : <IconBtn icon={Lock} color="rose" onClick={onBlock} />
         }
+        <IconBtn icon={KeyRound} color="amber" onClick={onResetCreds} title="Parolni yangidan chiqarish" />
         <IconBtn icon={Pencil} color="blue" onClick={onEdit} />
         <IconBtn icon={Trash2} color="rose" onClick={onDelete} />
       </div>
