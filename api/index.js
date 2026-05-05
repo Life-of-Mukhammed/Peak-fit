@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+const mongoose = require('../backend/node_modules/mongoose');
 const app = require('../backend/server');
 
 mongoose.set('bufferCommands', false);
