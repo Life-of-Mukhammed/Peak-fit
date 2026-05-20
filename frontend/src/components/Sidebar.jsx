@@ -77,7 +77,7 @@ export default function Sidebar({ onNewCustomer }) {
               <Dumbbell size={20} className="text-white" />
             </div>
             <div>
-              <div className="text-white font-bold text-[15px] leading-tight tracking-tight">Peak Fit</div>
+              <div className="text-white font-bold text-[15px] leading-tight tracking-tight">KiGo</div>
               <div className="text-slate-400 text-[11px] leading-tight">Administrator Paneli</div>
             </div>
           </div>

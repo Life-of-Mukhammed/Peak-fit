@@ -1,13 +1,15 @@
 #!/bin/bash
-echo "🏋️ Peak Fit ishga tushirilmoqda..."
+echo "🏋️ KiGo ishga tushirilmoqda..."
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 # Backend
-cd "$(dirname "$0")/backend"
+cd "$ROOT/backend"
 npm run dev &
 BACKEND_PID=$!
 
 # Frontend
-cd "$(dirname "$0")/frontend"
+cd "$ROOT/frontend"
 npm run dev &
 FRONTEND_PID=$!
 

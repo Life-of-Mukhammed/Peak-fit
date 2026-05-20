@@ -16,7 +16,10 @@ const customerSchema = new mongoose.Schema({
   },
   debt: { type: Number, default: 0 },
   totalPaid: { type: Number, default: 0 },
-  branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch', default: null },
+  branch:   { type: mongoose.Schema.Types.ObjectId, ref: 'Branch',   default: null },
+  province: { type: mongoose.Schema.Types.ObjectId, ref: 'Province', default: null },
+  district: { type: mongoose.Schema.Types.ObjectId, ref: 'District', default: null },
+  dealer:   { type: mongoose.Schema.Types.ObjectId, ref: 'Dealer',   default: null },
   frozen: { type: Boolean, default: false },
 }, { timestamps: true });
 

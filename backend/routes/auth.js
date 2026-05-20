@@ -13,7 +13,7 @@ router.post('/login', async (req, res) => {
     if (!isMatch) return res.status(401).json({ message: 'Login yoki parol noto\'g\'ri' });
 
     const token = jwt.sign(
-      { id: user._id, role: user.role, permissions: user.permissions },
+      { id: user._id, role: user.role, permissions: user.permissions, name: user.name },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -44,36 +44,39 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+// PERM_PRESETS — default permission set per role
+const PRESETS = {
+  superadmin: { kassa: true,  mijozlar: true,  ombor: true,  xodimlar: true,  tariflar: true,  hisobotlar: true,  sozlamalar: true  },
+  admin:      { kassa: true,  mijozlar: true,  ombor: true,  xodimlar: true,  tariflar: true,  hisobotlar: true,  sozlamalar: true  },
+  manager:    { kassa: true,  mijozlar: true,  ombor: true,  xodimlar: false, tariflar: false, hisobotlar: true,  sozlamalar: false },
+  cashier:    { kassa: true,  mijozlar: true,  ombor: false, xodimlar: false, tariflar: false, hisobotlar: false, sozlamalar: false },
+};
+
 router.post('/seed', async (req, res) => {
   try {
+    const seedList = [
+      { login: 'superadmin', password: 'super123',   name: 'Super',   surname: 'Admin',   role: 'superadmin' },
+      { login: 'admin',      password: 'admin123',   name: 'Admin',   surname: 'Birinchi',role: 'admin'      },
+      { login: 'manager',    password: 'manager123', name: 'Manager', surname: 'Birinchi',role: 'manager'    },
+      { login: 'kassir',     password: 'kassir123',  name: 'Kassir',  surname: 'Birinchi',role: 'cashier'    },
+    ];
     const results = [];
-    if (!await User.findOne({ login: 'admin' })) {
-      await new User({
-        name: 'Super', surname: 'Admin', login: 'admin', password: 'admin123',
-        role: 'superadmin',
-        permissions: { kassa: true, mijozlar: true, ombor: true, xodimlar: true, tariflar: true, hisobotlar: true, sozlamalar: true },
-      }).save();
-      results.push('admin yaratildi (login=admin, parol=admin123)');
-    } else { results.push('admin mavjud'); }
-
-    if (!await User.findOne({ login: 'manager' })) {
-      await new User({
-        name: 'Manager', surname: 'Birinchi', login: 'manager', password: 'manager123',
-        role: 'admin',
-        permissions: { kassa: true, mijozlar: true, ombor: true, xodimlar: false, tariflar: true, hisobotlar: true, sozlamalar: false },
-      }).save();
-      results.push('manager yaratildi (login=manager, parol=manager123)');
-    } else { results.push('manager mavjud'); }
-
-    if (!await User.findOne({ login: 'manager2' })) {
-      await new User({
-        name: 'Manager', surname: 'Ikkinchi', login: 'manager2', password: 'manager123',
-        role: 'admin',
-        permissions: { kassa: true, mijozlar: true, ombor: true, xodimlar: false, tariflar: true, hisobotlar: true, sozlamalar: false },
-      }).save();
-      results.push('manager2 yaratildi (login=manager2, parol=manager123)');
-    } else { results.push('manager2 mavjud'); }
-
+    for (const u of seedList) {
+      const exists = await User.findOne({ login: u.login });
+      if (exists) {
+        if (exists.role !== u.role) {
+          exists.role = u.role;
+          exists.permissions = PRESETS[u.role];
+          await exists.save();
+          results.push(`${u.login} roli yangilandi: ${u.role}`);
+        } else {
+          results.push(`${u.login} mavjud (${u.role})`);
+        }
+        continue;
+      }
+      await new User({ ...u, permissions: PRESETS[u.role] }).save();
+      results.push(`${u.login} yaratildi (parol: ${u.password})`);
+    }
     res.json({ message: results.join('; ') });
   } catch (err) {
     res.status(500).json({ message: err.message });

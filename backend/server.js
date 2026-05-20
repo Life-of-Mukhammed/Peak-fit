@@ -23,6 +23,11 @@ app.use('/api/services', require('./routes/services'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/smena', require('./routes/smena'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/provinces', require('./routes/provinces'));
+app.use('/api/districts', require('./routes/districts'));
+app.use('/api/dealers',   require('./routes/dealers'));
+app.use('/api/audit',     require('./routes/audit'));
+app.use('/api/dashboard', require('./routes/dashboard'));
 
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;

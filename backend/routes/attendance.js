@@ -2,15 +2,21 @@ const router = require('express').Router();
 const Attendance = require('../models/Attendance');
 const Customer = require('../models/Customer');
 const auth = require('../middleware/auth');
+const scope = require('../middleware/scope');
+
+router.use(auth, scope);
 
 const today = () => new Date().toISOString().split('T')[0];
 
-// List today's attendance (optionally filtered by branch)
-router.get('/today', auth, async (req, res) => {
+router.get('/today', async (req, res) => {
   try {
     const { branchId } = req.query;
     const q = { date: today() };
-    if (branchId) q.branch = branchId;
+    if (branchId && req.canAccessBranch(branchId)) {
+      q.branch = branchId;
+    } else {
+      Object.assign(q, req.scopeFilterOrNull('branch'));
+    }
     const list = await Attendance.find(q)
       .populate('customer', 'name surname customerId photo phone activeTariff')
       .populate({ path: 'customer', populate: { path: 'activeTariff.tariff', select: 'name' } })
@@ -19,14 +25,15 @@ router.get('/today', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Mark a customer as attended today (idempotent)
-router.post('/', auth, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const { customerId, source = 'manual', branch = null } = req.body;
+    const { customerId, source = 'manual' } = req.body;
+    let { branch } = req.body;
     if (!customerId) return res.status(400).json({ message: 'customerId kerak' });
-
     const customer = await Customer.findById(customerId);
     if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
+    if (!req.canAccessBranch(customer.branch)) return res.status(403).json({ message: 'Ruxsat yo\'q' });
+    if (!branch && req.scopedBranchIds?.length > 0) branch = req.scopedBranchIds[0];
 
     let record = await Attendance.findOne({ customer: customerId, date: today() });
     let alreadyMarked = false;
@@ -38,7 +45,7 @@ router.post('/', auth, async (req, res) => {
         date: today(),
         scannedBy: req.user.id,
         source,
-        branch,
+        branch: branch || null,
       });
     }
     const populated = await Attendance.findById(record._id)
@@ -51,10 +58,10 @@ router.post('/', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Lookup customer by QR payload (accepts JSON string OR plain customerId)
-router.post('/scan', auth, async (req, res) => {
+router.post('/scan', async (req, res) => {
   try {
-    const { payload, branch = null } = req.body;
+    const { payload } = req.body;
+    let { branch } = req.body;
     if (!payload) return res.status(400).json({ message: 'payload kerak' });
 
     let lookup = null;
@@ -69,6 +76,8 @@ router.post('/scan', auth, async (req, res) => {
 
     const customer = await Customer.findOne(lookup);
     if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
+    if (!req.canAccessBranch(customer.branch)) return res.status(403).json({ message: 'Bu mijoz boshqa clubga tegishli' });
+    if (!branch && req.scopedBranchIds?.length > 0) branch = req.scopedBranchIds[0];
 
     let record = await Attendance.findOne({ customer: customer._id, date: today() });
     let alreadyMarked = !!record;
@@ -78,7 +87,7 @@ router.post('/scan', auth, async (req, res) => {
         date: today(),
         scannedBy: req.user.id,
         source: 'qr',
-        branch,
+        branch: branch || null,
       });
     }
     const populated = await Attendance.findById(record._id)
@@ -91,8 +100,11 @@ router.post('/scan', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
+    const rec = await Attendance.findById(req.params.id);
+    if (!rec) return res.status(404).json({ message: 'Tashrif topilmadi' });
+    if (!req.canAccessBranch(rec.branch)) return res.status(403).json({ message: 'Ruxsat yo\'q' });
     await Attendance.findByIdAndDelete(req.params.id);
     res.json({ message: 'Tashrif o\'chirildi' });
   } catch (err) { res.status(500).json({ message: err.message }); }

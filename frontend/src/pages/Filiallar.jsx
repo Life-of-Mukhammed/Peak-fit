@@ -2,17 +2,21 @@ import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import {
   Plus, Edit2, Trash2, MapPin, Phone, Star, Building2,
-  BarChart2, TrendingUp, Users, Shield, ChevronDown, ChevronUp
+  BarChart2, TrendingUp, Users, Shield, ChevronDown, ChevronUp,
+  Key, Copy, RefreshCw, CheckCircle2,
 } from 'lucide-react';
 import { useBranch } from '../context/BranchContext';
+import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { formatMoney } from '../utils/format';
 import Modal from '../components/Modal';
 
-const INITIAL_FORM = { name: '', address: '', phone: '', isMain: false, isActive: true };
+const INITIAL_FORM = { name: '', address: '', phone: '', isMain: false, isActive: true, autoCreateAdmin: true };
 
 export default function Filiallar() {
   const { branches, fetchBranches, selectBranch, selected } = useBranch();
+  const { user } = useAuth();
+  const isSuper = user?.role === 'superadmin';
   const [showModal, setShowModal]     = useState(false);
   const [editing, setEditing]         = useState(null);
   const [form, setForm]               = useState(INITIAL_FORM);
@@ -20,11 +24,12 @@ export default function Filiallar() {
   const [showReport, setShowReport]   = useState(false);
   const [reportData, setReportData]   = useState([]);
   const [reportLoading, setReportLoading] = useState(false);
+  const [credentials, setCredentials] = useState(null); // { login, password, branchName }
 
   const openCreate = () => { setEditing(null); setForm(INITIAL_FORM); setShowModal(true); };
   const openEdit   = (b) => {
     setEditing(b);
-    setForm({ name: b.name, address: b.address || '', phone: b.phone || '', isMain: b.isMain, isActive: b.isActive });
+    setForm({ name: b.name, address: b.address || '', phone: b.phone || '', isMain: b.isMain, isActive: b.isActive, autoCreateAdmin: false });
     setShowModal(true);
   };
 
@@ -35,14 +40,39 @@ export default function Filiallar() {
       if (editing) {
         await api.put(`/branches/${editing._id}`, form);
         toast.success('Filial yangilandi');
+        setShowModal(false);
       } else {
-        await api.post('/branches', form);
+        const res = await api.post('/branches', form);
         toast.success('Filial qo\'shildi');
+        setShowModal(false);
+        // Show credentials if auto-created
+        if (res.data?.credentials?.password) {
+          setCredentials({
+            login: res.data.credentials.login,
+            password: res.data.credentials.password,
+            branchName: res.data.name,
+          });
+        } else if (res.data?.credentials?.note) {
+          toast(res.data.credentials.note, { icon: 'ℹ️' });
+        }
       }
-      setShowModal(false);
       fetchBranches();
     } catch (err) { toast.error(err.response?.data?.message || 'Xato'); }
     finally { setLoading(false); }
+  };
+
+  const handleResetAdmin = async (b) => {
+    if (!confirm(`"${b.name}" club admini uchun yangi parol generatsiya qilinsinmi?`)) return;
+    try {
+      const res = await api.post(`/branches/${b._id}/reset-admin`);
+      setCredentials({
+        login: res.data.credentials.login,
+        password: res.data.credentials.password,
+        branchName: b.name,
+      });
+      toast.success('Yangi login va parol yaratildi');
+      fetchBranches();
+    } catch (err) { toast.error(err.response?.data?.message || 'Xato'); }
   };
 
   const handleDelete = async (id) => {
@@ -87,11 +117,17 @@ export default function Filiallar() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Filiallar</h1>
-          <p className="text-gray-500 text-sm mt-0.5">{branches.length} ta filial</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isSuper ? 'Mijoz clublar' : 'Mening filiallarim'}
+          </h1>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {branches.length} ta {isSuper ? 'club' : 'filial'}
+            {!isSuper && ' (asosiy + qo\'shimchalar)'}
+          </p>
         </div>
         <button onClick={openCreate} className="btn-accent flex items-center gap-2">
-          <Plus size={18} /> Filial qo'shish
+          <Plus size={18} />
+          {isSuper ? 'Yangi club (asosiy filial)' : 'Qo\'shimcha filial qo\'shish'}
         </button>
       </div>
 
@@ -158,6 +194,11 @@ export default function Filiallar() {
                   {!b.isMain && (
                     <button onClick={() => handleSetMain(b)} className="p-1.5 hover:bg-yellow-50 text-yellow-500 rounded-lg" title="Asosiy qilish">
                       <Star size={14} />
+                    </button>
+                  )}
+                  {isSuper && (
+                    <button onClick={() => handleResetAdmin(b)} className="p-1.5 hover:bg-emerald-50 text-emerald-600 rounded-lg" title="Admin parolini yangilash">
+                      <Key size={14} />
                     </button>
                   )}
                   <button onClick={() => openEdit(b)} className="p-1.5 hover:bg-blue-50 text-blue-500 rounded-lg"><Edit2 size={14} /></button>
@@ -293,7 +334,7 @@ export default function Filiallar() {
       )}
 
       {/* Add/Edit modal */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Filialni tahrirlash' : 'Yangi filial qo\'shish'} size="sm">
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Filialni tahrirlash' : (isSuper ? 'Yangi club (asosiy filial)' : 'Qo\'shimcha filial')} size="sm">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Filial nomi *</label>
@@ -308,11 +349,28 @@ export default function Filiallar() {
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Telefon</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Telefon {isSuper && !editing && <span className="text-xs text-gray-400">(admin logini bo'ladi)</span>}</label>
             <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
               placeholder="+998 90 000 00 00"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" />
           </div>
+          {isSuper && !editing && (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="auto-admin"
+                checked={form.autoCreateAdmin}
+                onChange={(e) => setForm({ ...form, autoCreateAdmin: e.target.checked })}
+                className="mt-0.5 w-4 h-4 accent-emerald-600"
+              />
+              <label htmlFor="auto-admin" className="flex-1 cursor-pointer">
+                <div className="text-sm font-semibold text-emerald-800">Avtomatik admin login yaratish</div>
+                <div className="text-xs text-emerald-700 mt-0.5">
+                  Club uchun admin akkaunti yaratiladi. Login = telefon raqami. Parol = 6 xonali raqam (avtomatik). Bir martagina ko'rsatiladi.
+                </div>
+              </label>
+            </div>
+          )}
           <div className="flex gap-5">
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={form.isMain} onChange={e => setForm({ ...form, isMain: e.target.checked })} className="w-4 h-4 accent-sidebar rounded" />
@@ -333,6 +391,70 @@ export default function Filiallar() {
           </div>
         </form>
       </Modal>
+
+      {/* Credentials display modal */}
+      <Modal isOpen={!!credentials} onClose={() => setCredentials(null)} title="" size="sm">
+        {credentials && (
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 size={24} className="text-emerald-600" />
+              </div>
+              <div>
+                <div className="font-bold text-gray-900 text-lg">Login va parol tayyor</div>
+                <div className="text-xs text-gray-500">"{credentials.branchName}" club admini uchun</div>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-800">
+              ⚠️ <b>Diqqat:</b> Bu parol faqat shu yerda ko'rsatiladi. Saqlab oling yoki nusxa oling — keyin ko'rinmaydi.
+            </div>
+
+            <div className="space-y-3">
+              <CredField label="Login (telefon raqami)" value={credentials.login} mono />
+              <CredField label="Parol" value={credentials.password} mono big />
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`Login: ${credentials.login}\nParol: ${credentials.password}`);
+                  toast.success('Nusxa olindi');
+                }}
+                className="flex-1 flex items-center justify-center gap-2 border border-gray-200 text-gray-700 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
+              >
+                <Copy size={14} /> Hammasini nusxa olish
+              </button>
+              <button
+                onClick={() => setCredentials(null)}
+                className="flex-1 bg-accent text-white font-semibold py-2.5 rounded-lg hover:bg-accent-dark text-sm"
+              >
+                Yodlab oldim
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function CredField({ label, value, mono, big }) {
+  const copy = () => {
+    navigator.clipboard.writeText(value);
+    toast.success('Nusxa olindi');
+  };
+  return (
+    <div>
+      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</div>
+      <div className="flex items-stretch gap-2">
+        <div className={`flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 ${mono ? 'font-mono' : ''} ${big ? 'text-2xl font-bold tracking-widest text-emerald-700' : 'text-base text-gray-900'}`}>
+          {value}
+        </div>
+        <button onClick={copy} className="px-3 border border-gray-200 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900" title="Nusxa olish">
+          <Copy size={15} />
+        </button>
+      </div>
     </div>
   );
 }

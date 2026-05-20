@@ -4,7 +4,7 @@ import { Save, Upload } from 'lucide-react';
 import api from '../utils/api';
 
 export default function Sozlamalar() {
-  const [settings, setSettings] = useState({ gymName: 'Peak Fit', phone: '', address: '', currency: 'UZS', workingHours: '' });
+  const [settings, setSettings] = useState({ gymName: 'KiGo', phone: '', address: '', currency: 'UZS', workingHours: '' });
   const [logo, setLogo] = useState(null);
   const [logoPreview, setLogoPreview] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,7 @@ export default function Sozlamalar() {
 
           <div className="space-y-3">
             {[
-              { key: 'gymName', label: 'Zal nomi', placeholder: 'Peak Fit' },
+              { key: 'gymName', label: 'Zal nomi', placeholder: 'KiGo' },
               { key: 'phone', label: 'Telefon raqam', placeholder: '+998 90 000 00 00' },
               { key: 'address', label: 'Manzil', placeholder: 'Toshkent, ...' },
               { key: 'workingHours', label: 'Ish vaqti', placeholder: '06:00 - 22:00' },

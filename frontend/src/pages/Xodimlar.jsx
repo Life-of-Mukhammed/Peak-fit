@@ -3,16 +3,32 @@ import toast from 'react-hot-toast';
 import {
   Plus, Edit2, Trash2, User, Eye, EyeOff,
   TrendingUp, Clock, ShoppingCart, Banknote, CreditCard, BarChart2,
+  Key, Copy, CheckCircle2,
 } from 'lucide-react';
 import api from '../utils/api';
 import Modal from '../components/Modal';
 import { formatMoney } from '../utils/format';
+import { useAuth } from '../context/AuthContext';
 
-const ROLES = [
-  { value: 'superadmin', label: 'Super Admin' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'cashier', label: 'Kassir' },
-];
+const ROLES_BY_CREATOR = {
+  superadmin: [
+    { value: 'admin',   label: 'Admin (club egasi)' },
+    { value: 'manager', label: 'Menejer' },
+    { value: 'cashier', label: 'Kassir' },
+  ],
+  admin: [
+    { value: 'manager', label: 'Menejer' },
+    { value: 'cashier', label: 'Kassir' },
+  ],
+};
+
+const ROLE_LABELS = { superadmin: 'Super admin', admin: 'Admin', manager: 'Menejer', cashier: 'Kassir' };
+const ROLE_COLORS = {
+  superadmin: 'bg-purple-100 text-purple-700',
+  admin: 'bg-blue-100 text-blue-700',
+  manager: 'bg-amber-100 text-amber-700',
+  cashier: 'bg-green-100 text-green-700',
+};
 
 const MODULES = [
   { key: 'kassa', label: 'Kassa' },
@@ -24,10 +40,10 @@ const MODULES = [
   { key: 'sozlamalar', label: 'Sozlamalar' },
 ];
 
-const INITIAL_FORM = {
-  name: '', surname: '', dob: '', phone: '', login: '', password: '', role: 'cashier',
-  permissions: { kassa: true, mijozlar: false, ombor: false, xodimlar: false, tariflar: false, hisobotlar: false, sozlamalar: false },
-};
+const INITIAL_FORM = (defaultRole = 'cashier') => ({
+  name: '', surname: '', dob: '', phone: '', login: '', password: '', role: defaultRole,
+  permissions: { kassa: true, mijozlar: true, ombor: false, xodimlar: false, tariflar: false, hisobotlar: false, sozlamalar: false },
+});
 
 function fmtMinutes(mins) {
   if (!mins) return '0 soat';
@@ -39,16 +55,21 @@ function fmtMinutes(mins) {
 }
 
 export default function Xodimlar() {
+  const { user: me } = useAuth();
+  const canManage = me?.role === 'superadmin' || me?.role === 'admin';
+  const availableRoles = ROLES_BY_CREATOR[me?.role] || [];
+
   const [employees, setEmployees] = useState([]);
-  const [stats, setStats] = useState({}); // userId → stats
+  const [stats, setStats] = useState({});
   const [statsLoading, setStatsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState(INITIAL_FORM);
+  const [form, setForm] = useState(INITIAL_FORM(availableRoles[0]?.value || 'cashier'));
   const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [credentials, setCredentials] = useState(null);
   const fileRef = useRef();
 
   useEffect(() => { fetchAll(); }, []);
@@ -57,7 +78,7 @@ export default function Xodimlar() {
     try {
       const [empRes, statsRes] = await Promise.all([
         api.get('/employees'),
-        api.get('/smena/stats'),
+        api.get('/smena/stats').catch(() => ({ data: [] })),
       ]);
       setEmployees(empRes.data);
       const m = {};
@@ -68,11 +89,20 @@ export default function Xodimlar() {
   };
 
   const openCreate = () => {
-    setEditing(null); setForm(INITIAL_FORM); setPhoto(null); setPhotoPreview(''); setShowModal(true);
+    setEditing(null);
+    setForm(INITIAL_FORM(availableRoles[0]?.value || 'cashier'));
+    setPhoto(null); setPhotoPreview('');
+    setShowModal(true);
   };
+
   const openEdit = (e) => {
     setEditing(e);
-    setForm({ name: e.name, surname: e.surname, dob: e.dob || '', phone: e.phone || '', login: e.login, password: '', role: e.role, permissions: { ...INITIAL_FORM.permissions, ...e.permissions } });
+    setForm({
+      name: e.name, surname: e.surname, dob: e.dob || '',
+      phone: e.phone || '', login: e.login, password: '',
+      role: e.role,
+      permissions: { ...INITIAL_FORM().permissions, ...e.permissions },
+    });
     setPhotoPreview(e.photo || '');
     setShowModal(true);
   };
@@ -86,18 +116,42 @@ export default function Xodimlar() {
       const fd = new FormData();
       const data = { ...form };
       if (!data.password && editing) delete data.password;
+      // Let backend auto-generate login from phone if user didn't type one
+      if (!data.login && data.phone) data.login = data.phone.replace(/\D/g, '');
       fd.append('data', JSON.stringify(data));
       if (photo) fd.append('photo', photo);
       if (editing) {
         await api.put(`/employees/${editing._id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         toast.success('Xodim yangilandi');
+        setShowModal(false);
       } else {
-        await api.post('/employees', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const res = await api.post('/employees', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         toast.success('Xodim qo\'shildi');
+        setShowModal(false);
+        if (res.data?.credentials?.password) {
+          setCredentials({
+            login: res.data.credentials.login,
+            password: res.data.credentials.password,
+            who: `${res.data.name} ${res.data.surname}`,
+          });
+        }
       }
-      setShowModal(false); fetchAll();
+      fetchAll();
     } catch (err) { toast.error(err.response?.data?.message || 'Xato'); }
     finally { setLoading(false); }
+  };
+
+  const handleResetPassword = async (emp) => {
+    if (!confirm(`"${emp.name} ${emp.surname}" uchun yangi parol generatsiya qilinsinmi?`)) return;
+    try {
+      const res = await api.post(`/employees/${emp._id}/reset-password`);
+      setCredentials({
+        login: res.data.credentials.login,
+        password: res.data.credentials.password,
+        who: `${emp.name} ${emp.surname}`,
+      });
+      toast.success('Yangi parol yaratildi');
+    } catch (err) { toast.error(err.response?.data?.message || 'Xato'); }
   };
 
   const handleDelete = async (id) => {
@@ -106,10 +160,12 @@ export default function Xodimlar() {
     catch (err) { toast.error(err.response?.data?.message || 'Xato'); }
   };
 
-  const roleColors = { superadmin: 'bg-purple-100 text-purple-700', admin: 'bg-blue-100 text-blue-700', cashier: 'bg-green-100 text-green-700' };
-  const roleLabels = { superadmin: 'Super Admin', admin: 'Admin', cashier: 'Kassir' };
+  const canEditTarget = (emp) => {
+    if (me?.role === 'superadmin') return true;
+    if (me?.role === 'admin') return emp.role === 'manager' || emp.role === 'cashier';
+    return String(emp._id) === String(me?.id);
+  };
 
-  // Total stats across all employees
   const totalStats = Object.values(stats);
   const grandTotal = totalStats.reduce((s, x) => s + x.totalSales, 0);
   const grandHours = totalStats.reduce((s, x) => s + x.totalMinutes, 0);
@@ -119,14 +175,15 @@ export default function Xodimlar() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Xodimlar</h1>
-          <p className="text-gray-500 text-sm">{employees.length} ta xodim</p>
+          <p className="text-gray-500 text-sm">{employees.length} ta xodim · siz: {ROLE_LABELS[me?.role]}</p>
         </div>
-        <button onClick={openCreate} className="btn-accent flex items-center gap-2">
-          <Plus size={18} /> Xodim qo'shish
-        </button>
+        {canManage && (
+          <button onClick={openCreate} className="btn-accent flex items-center gap-2">
+            <Plus size={18} /> Xodim qo'shish
+          </button>
+        )}
       </div>
 
-      {/* Summary banner */}
       {!statsLoading && totalStats.length > 0 && (
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
@@ -162,9 +219,9 @@ export default function Xodimlar() {
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {employees.map(emp => {
           const s = stats[emp._id] || null;
+          const canEdit = canEditTarget(emp);
           return (
             <div key={emp._id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              {/* Top: info */}
               <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -175,30 +232,30 @@ export default function Xodimlar() {
                     </div>
                     <div>
                       <div className="font-semibold text-gray-900">{emp.name} {emp.surname}</div>
-                      <div className="text-gray-400 text-xs">{emp.login}</div>
+                      <div className="text-gray-400 text-xs font-mono">{emp.login}</div>
                     </div>
                   </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => openEdit(emp)} className="p-1.5 hover:bg-blue-50 text-blue-500 rounded-lg"><Edit2 size={14} /></button>
-                    <button onClick={() => handleDelete(emp._id)} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex gap-1">
+                      <button onClick={() => handleResetPassword(emp)} title="Parolni yangilash" className="p-1.5 hover:bg-emerald-50 text-emerald-600 rounded-lg">
+                        <Key size={14} />
+                      </button>
+                      <button onClick={() => openEdit(emp)} className="p-1.5 hover:bg-blue-50 text-blue-500 rounded-lg"><Edit2 size={14} /></button>
+                      {String(emp._id) !== String(me?.id) && (
+                        <button onClick={() => handleDelete(emp._id)} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${roleColors[emp.role]}`}>
-                    {roleLabels[emp.role]}
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${ROLE_COLORS[emp.role]}`}>
+                    {ROLE_LABELS[emp.role]}
                   </span>
                   {emp.phone && <span className="text-gray-400 text-xs">{emp.phone}</span>}
                 </div>
-
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {MODULES.filter(m => emp.role === 'superadmin' || emp.permissions?.[m.key]).map(m => (
-                    <span key={m.key} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{m.label}</span>
-                  ))}
-                </div>
               </div>
 
-              {/* Bottom: statistics */}
               <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-3">
                 <div className="flex items-center gap-1.5 mb-2.5">
                   <BarChart2 size={13} className="text-slate-400" />
@@ -209,36 +266,10 @@ export default function Xodimlar() {
                   <div className="text-xs text-slate-400 text-center py-1">Hali ma'lumot yo'q</div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-white border border-slate-100 rounded-lg p-2">
-                      <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold mb-0.5">
-                        <TrendingUp size={10} /> Jami tushum
-                      </div>
-                      <div className="font-bold text-slate-900 text-sm tabular-nums">{formatMoney(s.totalSales)}</div>
-                    </div>
-                    <div className="bg-white border border-slate-100 rounded-lg p-2">
-                      <div className="flex items-center gap-1 text-[10px] text-blue-600 font-semibold mb-0.5">
-                        <Clock size={10} /> Ish vaqti
-                      </div>
-                      <div className="font-bold text-slate-900 text-sm">{fmtMinutes(s.totalMinutes)}</div>
-                    </div>
-                    <div className="bg-white border border-slate-100 rounded-lg p-2">
-                      <div className="flex items-center gap-1 text-[10px] text-slate-500 font-semibold mb-0.5">
-                        <Banknote size={10} /> Naqd
-                      </div>
-                      <div className="font-bold text-slate-900 text-sm tabular-nums">{formatMoney(s.cashSales)}</div>
-                    </div>
-                    <div className="bg-white border border-slate-100 rounded-lg p-2">
-                      <div className="flex items-center gap-1 text-[10px] text-slate-500 font-semibold mb-0.5">
-                        <CreditCard size={10} /> Karta
-                      </div>
-                      <div className="font-bold text-slate-900 text-sm tabular-nums">{formatMoney(s.cardSales)}</div>
-                    </div>
-                    <div className="bg-white border border-slate-100 rounded-lg p-2 col-span-2">
-                      <div className="flex items-center gap-1 text-[10px] text-orange-600 font-semibold mb-0.5">
-                        <ShoppingCart size={10} /> Savdolar soni
-                      </div>
-                      <div className="font-bold text-slate-900 text-sm">{s.saleCount} ta sotuv</div>
-                    </div>
+                    <Stat icon={<TrendingUp size={10} />} color="text-emerald-600" label="Jami tushum" value={formatMoney(s.totalSales)} />
+                    <Stat icon={<Clock size={10} />} color="text-blue-600" label="Ish vaqti" value={fmtMinutes(s.totalMinutes)} />
+                    <Stat icon={<Banknote size={10} />} color="text-slate-500" label="Naqd" value={formatMoney(s.cashSales)} />
+                    <Stat icon={<CreditCard size={10} />} color="text-slate-500" label="Karta" value={formatMoney(s.cardSales)} />
                   </div>
                 )}
               </div>
@@ -266,55 +297,37 @@ export default function Xodimlar() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Ism *</label>
-              <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" placeholder="Ism" />
+              <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Familya *</label>
-              <input value={form.surname} onChange={e => setForm({...form, surname: e.target.value})} required className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" placeholder="Familya" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Familiya *</label>
+              <input value={form.surname} onChange={e => setForm({...form, surname: e.target.value})} required className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Telefon *</label>
-              <input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} required className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" placeholder="+998 90 123 45 67" />
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Telefon * <span className="text-xs text-gray-400">(login telefon raqami bo'ladi)</span>
+              </label>
+              <input value={form.phone} onChange={e => setForm({...form, phone: e.target.value, login: e.target.value.replace(/\D/g, '') })} required className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent font-mono" placeholder="+998 90 123 45 67" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Tug'ilgan sana</label>
               <input type="date" value={form.dob} onChange={e => setForm({...form, dob: e.target.value})} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Login *</label>
-              <input value={form.login} onChange={e => setForm({...form, login: e.target.value})} required className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent" placeholder="login" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Parol {editing ? '(o\'zgartirish uchun)' : '*'}</label>
-              <div className="relative">
-                <input type={showPass ? 'text' : 'password'} value={form.password} onChange={e => setForm({...form, password: e.target.value})} required={!editing}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-10 text-sm focus:border-accent" placeholder="••••••••" />
-                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                  {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
-              <select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent">
-                {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Rol *</label>
+              <select value={form.role} onChange={e => setForm({...form, role: e.target.value})} disabled={editing && me?.role !== 'superadmin'} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-accent disabled:bg-gray-50">
+                {availableRoles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                {editing && !availableRoles.find(r => r.value === editing.role) && (
+                  <option value={editing.role}>{ROLE_LABELS[editing.role]}</option>
+                )}
               </select>
             </div>
-          </div>
-
-          {form.role !== 'superadmin' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Modullar kirishiga ruxsat</label>
-              <div className="grid grid-cols-3 gap-2">
-                {MODULES.map(m => (
-                  <label key={m.key} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${form.permissions[m.key] ? 'border-accent bg-accent/10' : 'border-gray-200 hover:border-gray-300'}`}>
-                    <input type="checkbox" checked={!!form.permissions[m.key]} onChange={() => handlePerm(m.key)} className="accent-sidebar" />
-                    <span className="text-sm">{m.label}</span>
-                  </label>
-                ))}
-              </div>
+            <div className="col-span-2 bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-xs text-emerald-800">
+              {editing
+                ? 'Parolni yangilash uchun ↻ tugmasidan foydalaning (kartochkada).'
+                : 'Parol avtomatik 6 xonali raqam shaklida yaratiladi va saqlashdan keyin bir martagina ko\'rsatiladi.'}
             </div>
-          )}
+          </div>
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-lg hover:bg-gray-50">Bekor qilish</button>
@@ -324,6 +337,69 @@ export default function Xodimlar() {
           </div>
         </form>
       </Modal>
+
+      {/* Credentials modal */}
+      <Modal isOpen={!!credentials} onClose={() => setCredentials(null)} title="" size="sm">
+        {credentials && (
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 size={24} className="text-emerald-600" />
+              </div>
+              <div>
+                <div className="font-bold text-gray-900 text-lg">Login va parol tayyor</div>
+                <div className="text-xs text-gray-500">{credentials.who}</div>
+              </div>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-800">
+              ⚠️ <b>Diqqat:</b> Bu parol faqat shu yerda ko'rsatiladi. Saqlab oling — keyin ko'rinmaydi.
+            </div>
+            <div className="space-y-3">
+              <CredField label="Login (telefon)" value={credentials.login} />
+              <CredField label="Parol" value={credentials.password} big />
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => { navigator.clipboard.writeText(`Login: ${credentials.login}\nParol: ${credentials.password}`); toast.success('Nusxa olindi'); }}
+                className="flex-1 flex items-center justify-center gap-2 border border-gray-200 text-gray-700 py-2.5 rounded-lg hover:bg-gray-50 font-medium text-sm"
+              >
+                <Copy size={14} /> Hammasini nusxa olish
+              </button>
+              <button onClick={() => setCredentials(null)} className="flex-1 bg-accent text-white font-semibold py-2.5 rounded-lg hover:bg-accent-dark text-sm">
+                Yodlab oldim
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function Stat({ icon, color, label, value }) {
+  return (
+    <div className="bg-white border border-slate-100 rounded-lg p-2">
+      <div className={`flex items-center gap-1 text-[10px] font-semibold mb-0.5 ${color}`}>
+        {icon} {label}
+      </div>
+      <div className="font-bold text-slate-900 text-sm tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function CredField({ label, value, big }) {
+  const copy = () => { navigator.clipboard.writeText(value); toast.success('Nusxa olindi'); };
+  return (
+    <div>
+      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</div>
+      <div className="flex items-stretch gap-2">
+        <div className={`flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 font-mono ${big ? 'text-2xl font-bold tracking-widest text-emerald-700' : 'text-base text-gray-900'}`}>
+          {value}
+        </div>
+        <button onClick={copy} className="px-3 border border-gray-200 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900" title="Nusxa olish">
+          <Copy size={15} />
+        </button>
+      </div>
     </div>
   );
 }

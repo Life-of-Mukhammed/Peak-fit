@@ -3,11 +3,14 @@ const Sale = require('../models/Sale');
 const Product = require('../models/Product');
 const Customer = require('../models/Customer');
 const auth = require('../middleware/auth');
+const scope = require('../middleware/scope');
 
-router.get('/', auth, async (req, res) => {
+router.use(auth, scope);
+
+router.get('/', async (req, res) => {
   try {
     const { from, to, customerId } = req.query;
-    let query = {};
+    const query = req.scopeFilterOrNull('branch');
     if (from && to) query.createdAt = { $gte: new Date(from), $lte: new Date(to) };
     if (customerId) query.customer = customerId;
     const sales = await Sale.find(query)
@@ -18,22 +21,25 @@ router.get('/', auth, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(200);
     res.json(sales);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.post('/', auth, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const { items, tariff, customer, total, paymentMethod, saleType, note, branch } = req.body;
+    const { items, tariff, customer, total, paymentMethod, saleType, note } = req.body;
+    let { branch } = req.body;
+    // Auto-attribute branch for non-super users
+    if (!branch && req.scopedBranchIds && req.scopedBranchIds.length > 0) {
+      branch = req.scopedBranchIds[0];
+    }
+    if (branch && !req.canAccessBranch(branch)) {
+      return res.status(403).json({ message: 'Ruxsat yo\'q' });
+    }
 
     const sale = new Sale({
-      items,
-      tariff,
-      customer,
+      items, tariff, customer,
       cashier: req.user.id,
-      total,
-      paymentMethod,
+      total, paymentMethod,
       saleType: saleType || (tariff ? 'tariff' : 'product'),
       note,
       branch: branch || null,
@@ -72,24 +78,17 @@ router.post('/', auth, async (req, res) => {
       .populate('cashier', 'name surname')
       .populate('tariff', 'name');
     res.status(201).json(populated);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.get('/today', auth, async (req, res) => {
+router.get('/today', async (req, res) => {
   try {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-
-    const sales = await Sale.find({ createdAt: { $gte: start, $lte: end } });
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const end   = new Date(); end.setHours(23, 59, 59, 999);
+    const sales = await Sale.find({ ...req.scopeFilterOrNull('branch'), createdAt: { $gte: start, $lte: end } });
     const total = sales.reduce((sum, s) => sum + s.total, 0);
     res.json({ count: sales.length, total, sales });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 module.exports = router;

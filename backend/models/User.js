@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
   photo: String,
   login: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['superadmin', 'admin', 'cashier'], default: 'cashier' },
+  role: { type: String, enum: ['superadmin', 'admin', 'manager', 'cashier'], default: 'cashier' },
   permissions: {
     kassa: { type: Boolean, default: true },
     mijozlar: { type: Boolean, default: false },
@@ -19,6 +19,9 @@ const userSchema = new mongoose.Schema({
     hisobotlar: { type: Boolean, default: false },
     sozlamalar: { type: Boolean, default: false },
   },
+  // KiGo extensions — scope for non-super-admin roles
+  provinces: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Province' }],
+  branches:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
