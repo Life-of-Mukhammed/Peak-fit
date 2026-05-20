@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const productSchema = new mongoose.Schema({
+  club: { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformClub', required: true, index: true },
   name: { type: String, required: true },
   quantity: { type: Number, default: 0 },
   image: String,

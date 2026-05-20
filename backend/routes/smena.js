@@ -3,36 +3,37 @@ const Smena = require('../models/Smena');
 const Sale = require('../models/Sale');
 const Attendance = require('../models/Attendance');
 const Customer = require('../models/Customer');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/clubAuth');
 
-// Get current globally open smena
 router.get('/current', auth, async (req, res) => {
   try {
-    const smena = await Smena.findOne({ isOpen: true })
+    const smena = await Smena.findOne({ club: req.user.club, isOpen: true })
       .populate('openedBy', 'name surname');
     res.json(smena || null);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Open a new smena — only 1 can be open at a time globally
 router.post('/open', auth, async (req, res) => {
   try {
-    const existing = await Smena.findOne({ isOpen: true });
+    const existing = await Smena.findOne({ club: req.user.club, isOpen: true });
     if (existing) {
       return res.status(400).json({
         message: `Hozir smena ochiq (${existing.openedBy?.name || ''}). Avval uni yoping.`
       });
     }
-    const smena = await Smena.create({ openedBy: req.user.id, branch: req.body.branch || null });
+    const smena = await Smena.create({
+      club: req.user.club,
+      openedBy: req.user.id,
+      branch: req.body.branch || null,
+    });
     const populated = await Smena.findById(smena._id).populate('openedBy', 'name surname');
     res.status(201).json(populated);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Close current open smena — generate report
 router.post('/close', auth, async (req, res) => {
   try {
-    const smena = await Smena.findOne({ isOpen: true });
+    const smena = await Smena.findOne({ club: req.user.club, isOpen: true });
     if (!smena) return res.status(404).json({ message: 'Ochiq smena topilmadi' });
 
     const since = smena.openedAt;
@@ -40,10 +41,12 @@ router.post('/close', auth, async (req, res) => {
     const openerId = smena.openedBy.toString();
 
     const sales = await Sale.find({
+      club: req.user.club,
       cashier: openerId, createdAt: { $gte: since, $lte: now },
       saleType: { $ne: 'debt_payment' }
     });
     const debtPayments = await Sale.find({
+      club: req.user.club,
       cashier: openerId, createdAt: { $gte: since, $lte: now },
       saleType: 'debt_payment'
     });
@@ -56,8 +59,8 @@ router.post('/close', auth, async (req, res) => {
     const totalSales = cashSales + cardSales;
 
     const today = now.toISOString().split('T')[0];
-    const attendanceCount = await Attendance.countDocuments({ date: today });
-    const newCustomers = await Customer.countDocuments({ createdAt: { $gte: since, $lte: now } });
+    const attendanceCount = await Attendance.countDocuments({ club: req.user.club, date: today });
+    const newCustomers = await Customer.countDocuments({ club: req.user.club, createdAt: { $gte: since, $lte: now } });
 
     smena.isOpen = false;
     smena.closedAt = now;
@@ -73,10 +76,9 @@ router.post('/close', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Per-employee stats from all closed smenas
 router.get('/stats', auth, async (req, res) => {
   try {
-    const smenas = await Smena.find({ isOpen: false })
+    const smenas = await Smena.find({ club: req.user.club, isOpen: false })
       .populate('openedBy', 'name surname _id');
 
     const map = {};
@@ -106,10 +108,9 @@ router.get('/stats', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Get all closed smenas (admin history)
 router.get('/history', auth, async (req, res) => {
   try {
-    const list = await Smena.find({ isOpen: false })
+    const list = await Smena.find({ club: req.user.club, isOpen: false })
       .populate('openedBy', 'name surname')
       .sort({ closedAt: -1 })
       .limit(100);

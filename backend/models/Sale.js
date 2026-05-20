@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const saleSchema = new mongoose.Schema({
+  club: { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformClub', required: true, index: true },
   items: [{
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     name: String,

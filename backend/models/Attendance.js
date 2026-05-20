@@ -1,9 +1,10 @@
 const mongoose = require('mongoose');
 
 const attendanceSchema = new mongoose.Schema({
+  club:      { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformClub', required: true, index: true },
   customer:  { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
-  date:      { type: String, required: true },                                       // YYYY-MM-DD (gym local day)
-  time:      { type: Date,   default: () => new Date() },                            // exact entry timestamp
+  date:      { type: String, required: true },
+  time:      { type: Date,   default: () => new Date() },
   branch:    { type: mongoose.Schema.Types.ObjectId, ref: 'Branch', default: null },
   scannedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User',   default: null },
   source:    { type: String, enum: ['manual', 'qr'], default: 'manual' },

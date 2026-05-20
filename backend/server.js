@@ -23,11 +23,15 @@ app.use('/api/services', require('./routes/services'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/smena', require('./routes/smena'));
 app.use('/api/admin', require('./routes/admin'));
-app.use('/api/provinces', require('./routes/provinces'));
-app.use('/api/districts', require('./routes/districts'));
-app.use('/api/dealers',   require('./routes/dealers'));
-app.use('/api/audit',     require('./routes/audit'));
-app.use('/api/dashboard', require('./routes/dashboard'));
+
+// FitOS / KiGo platform admin
+app.use('/api/fitos/regions',  require('./routes/fitos/regions'));
+app.use('/api/fitos/services', require('./routes/fitos/services'));
+app.use('/api/fitos/tariffs',  require('./routes/fitos/tariffs'));
+app.use('/api/fitos/clubs',    require('./routes/fitos/clubs'));
+app.use('/api/fitos/dealers',  require('./routes/fitos/dealers'));
+app.use('/api/fitos/messages', require('./routes/fitos/messages'));
+app.use('/api/fitos/payments', require('./routes/fitos/payments'));
 
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;

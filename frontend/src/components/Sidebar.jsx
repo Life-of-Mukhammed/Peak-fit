@@ -3,9 +3,10 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSmena } from '../context/SmenaContext';
 import { formatMoney } from '../utils/format';
+import KiGoLogo from './KiGoLogo';
 import {
   ShoppingCart, Users, Package, Tag, UserCog,
-  BarChart2, Settings, User, LogOut, Dumbbell,
+  BarChart2, Settings, User, LogOut,
   Building2, UserPlus, PlayCircle, StopCircle, X,
   Check, Banknote, CreditCard, AlertTriangle, Clock,
 } from 'lucide-react';
@@ -72,15 +73,7 @@ export default function Sidebar({ onNewCustomer }) {
       <aside className="w-[230px] min-w-[230px] bg-sidebar flex flex-col border-r border-slate-800">
         {/* Logo */}
         <div className="px-5 py-5 border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-lg shadow-accent/20">
-              <Dumbbell size={20} className="text-white" />
-            </div>
-            <div>
-              <div className="text-white font-bold text-[15px] leading-tight tracking-tight">KiGo</div>
-              <div className="text-slate-400 text-[11px] leading-tight">Administrator Paneli</div>
-            </div>
-          </div>
+          <KiGoLogo size={40} subtitle="Administrator Paneli" />
         </div>
 
         {/* Nav items */}

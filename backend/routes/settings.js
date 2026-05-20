@@ -2,7 +2,7 @@ const router = require('express').Router();
 const multer = require('multer');
 const path = require('path');
 const Settings = require('../models/Settings');
-const auth = require('../middleware/auth');
+const auth = require('../middleware/clubAuth');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads')),
@@ -12,9 +12,9 @@ const upload = multer({ storage });
 
 router.get('/', auth, async (req, res) => {
   try {
-    let settings = await Settings.findOne();
+    let settings = await Settings.findOne({ club: req.user.club });
     if (!settings) {
-      settings = new Settings();
+      settings = new Settings({ club: req.user.club });
       await settings.save();
     }
     res.json(settings);
@@ -27,10 +27,11 @@ router.put('/', auth, upload.single('logo'), async (req, res) => {
   try {
     const data = JSON.parse(req.body.data || '{}');
     if (req.file) data.logo = `/uploads/${req.file.filename}`;
+    delete data.club;
 
-    let settings = await Settings.findOne();
+    let settings = await Settings.findOne({ club: req.user.club });
     if (!settings) {
-      settings = new Settings(data);
+      settings = new Settings({ ...data, club: req.user.club });
     } else {
       Object.assign(settings, data);
     }

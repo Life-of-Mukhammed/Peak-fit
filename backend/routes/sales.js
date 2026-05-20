@@ -2,15 +2,12 @@ const router = require('express').Router();
 const Sale = require('../models/Sale');
 const Product = require('../models/Product');
 const Customer = require('../models/Customer');
-const auth = require('../middleware/auth');
-const scope = require('../middleware/scope');
+const auth = require('../middleware/clubAuth');
 
-router.use(auth, scope);
-
-router.get('/', async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
     const { from, to, customerId } = req.query;
-    const query = req.scopeFilterOrNull('branch');
+    let query = { club: req.user.club };
     if (from && to) query.createdAt = { $gte: new Date(from), $lte: new Date(to) };
     if (customerId) query.customer = customerId;
     const sales = await Sale.find(query)
@@ -21,25 +18,23 @@ router.get('/', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(200);
     res.json(sales);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
-    const { items, tariff, customer, total, paymentMethod, saleType, note } = req.body;
-    let { branch } = req.body;
-    // Auto-attribute branch for non-super users
-    if (!branch && req.scopedBranchIds && req.scopedBranchIds.length > 0) {
-      branch = req.scopedBranchIds[0];
-    }
-    if (branch && !req.canAccessBranch(branch)) {
-      return res.status(403).json({ message: 'Ruxsat yo\'q' });
-    }
+    const { items, tariff, customer, total, paymentMethod, saleType, note, branch } = req.body;
 
     const sale = new Sale({
-      items, tariff, customer,
+      club: req.user.club,
+      items,
+      tariff,
+      customer,
       cashier: req.user.id,
-      total, paymentMethod,
+      total,
+      paymentMethod,
       saleType: saleType || (tariff ? 'tariff' : 'product'),
       note,
       branch: branch || null,
@@ -47,11 +42,17 @@ router.post('/', async (req, res) => {
 
     if (items && items.length > 0) {
       for (const item of items) {
-        await Product.findByIdAndUpdate(item.product, { $inc: { quantity: -item.quantity } });
+        await Product.findOneAndUpdate(
+          { _id: item.product, club: req.user.club },
+          { $inc: { quantity: -item.quantity } }
+        );
       }
     }
 
     if (customer) {
+      const customerDoc = await Customer.findOne({ _id: customer, club: req.user.club });
+      if (!customerDoc) return res.status(404).json({ message: 'Mijoz topilmadi' });
+
       if (paymentMethod === 'debt') {
         await Customer.findByIdAndUpdate(customer, { $inc: { debt: total } });
       } else {
@@ -60,7 +61,7 @@ router.post('/', async (req, res) => {
 
       if (tariff) {
         const Tariff = require('../models/Tariff');
-        const tariffDoc = await Tariff.findById(tariff);
+        const tariffDoc = await Tariff.findOne({ _id: tariff, club: req.user.club });
         if (tariffDoc) {
           const startDate = new Date();
           const endDate = new Date();
@@ -78,17 +79,24 @@ router.post('/', async (req, res) => {
       .populate('cashier', 'name surname')
       .populate('tariff', 'name');
     res.status(201).json(populated);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.get('/today', async (req, res) => {
+router.get('/today', auth, async (req, res) => {
   try {
-    const start = new Date(); start.setHours(0, 0, 0, 0);
-    const end   = new Date(); end.setHours(23, 59, 59, 999);
-    const sales = await Sale.find({ ...req.scopeFilterOrNull('branch'), createdAt: { $gte: start, $lte: end } });
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const sales = await Sale.find({ club: req.user.club, createdAt: { $gte: start, $lte: end } });
     const total = sales.reduce((sum, s) => sum + s.total, 0);
     res.json({ count: sales.length, total, sales });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 module.exports = router;

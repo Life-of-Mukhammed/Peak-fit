@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const smenaSchema = new mongoose.Schema({
+  club: { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformClub', required: true, index: true },
   openedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   openedAt: { type: Date, default: Date.now },
   closedAt: Date,

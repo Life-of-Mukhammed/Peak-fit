@@ -5,8 +5,7 @@ const QRCode = require('qrcode');
 const PDFDocument = require('pdfkit');
 const Customer = require('../models/Customer');
 const Sale = require('../models/Sale');
-const auth = require('../middleware/auth');
-const scope = require('../middleware/scope');
+const auth = require('../middleware/clubAuth');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads')),
@@ -14,92 +13,94 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-router.use(auth, scope);
-
-router.get('/', async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
     const { search } = req.query;
-    const q = req.scopeFilterOrNull('branch');
+    let query = { club: req.user.club };
     if (search) {
-      const or = [
+      query.$or = [
         { name: { $regex: search, $options: 'i' } },
         { surname: { $regex: search, $options: 'i' } },
         { phone: { $regex: search, $options: 'i' } },
         { customerId: { $regex: search, $options: 'i' } },
       ];
-      // Combine with scope using $and
-      Object.assign(q, q.$or ? { $and: [{ $or: q.$or }, { $or: or }] } : { $or: or });
-      delete q.$or;
     }
-    const customers = await Customer.find(q).populate('activeTariff.tariff').sort({ createdAt: -1 });
+    const customers = await Customer.find(query).populate('activeTariff.tariff').sort({ createdAt: -1 });
     res.json(customers);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', auth, async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id).populate('activeTariff.tariff');
+    const customer = await Customer.findOne({ _id: req.params.id, club: req.user.club }).populate('activeTariff.tariff');
     if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
-    if (!req.canAccessBranch(customer.branch)) return res.status(403).json({ message: 'Ruxsat yo\'q' });
     res.json(customer);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.post('/', upload.single('photo'), async (req, res) => {
+router.post('/', auth, upload.single('photo'), async (req, res) => {
   try {
     const data = JSON.parse(req.body.data || '{}');
-    // Auto-attribute branch for non-super users
-    if (!data.branch && req.scopedBranchIds && req.scopedBranchIds.length > 0) {
-      data.branch = req.scopedBranchIds[0];
-    }
     const customer = new Customer({
       ...data,
+      club: req.user.club,
       photo: req.file ? `/uploads/${req.file.filename}` : null,
     });
     await customer.save();
 
     const qrData = JSON.stringify({ id: customer._id, customerId: customer.customerId, name: customer.name });
-    customer.qrCode = await QRCode.toDataURL(qrData);
+    const qrCode = await QRCode.toDataURL(qrData);
+    customer.qrCode = qrCode;
     await customer.save();
 
     res.status(201).json(customer);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.put('/:id', upload.single('photo'), async (req, res) => {
+router.put('/:id', auth, upload.single('photo'), async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id);
-    if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
-    if (!req.canAccessBranch(customer.branch)) return res.status(403).json({ message: 'Ruxsat yo\'q' });
     const data = JSON.parse(req.body.data || '{}');
     if (req.file) data.photo = `/uploads/${req.file.filename}`;
-    const updated = await Customer.findByIdAndUpdate(req.params.id, data, { new: true });
-    res.json(updated);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+    delete data.club;
+    const customer = await Customer.findOneAndUpdate(
+      { _id: req.params.id, club: req.user.club },
+      data,
+      { new: true }
+    );
+    if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
+    res.json(customer);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id);
-    if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
-    if (!req.canAccessBranch(customer.branch)) return res.status(403).json({ message: 'Ruxsat yo\'q' });
-    await Customer.findByIdAndDelete(req.params.id);
+    const result = await Customer.findOneAndDelete({ _id: req.params.id, club: req.user.club });
+    if (!result) return res.status(404).json({ message: 'Mijoz topilmadi' });
     res.json({ message: 'Mijoz o\'chirildi' });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.get('/:id/pdf', async (req, res) => {
+router.get('/:id/pdf', auth, async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id).populate('activeTariff.tariff');
+    const customer = await Customer.findOne({ _id: req.params.id, club: req.user.club }).populate('activeTariff.tariff');
     if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
-    if (!req.canAccessBranch(customer.branch)) return res.status(403).json({ message: 'Ruxsat yo\'q' });
 
     const doc = new PDFDocument({ margin: 50 });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=customer_${customer.customerId}.pdf`);
     doc.pipe(res);
 
-    doc.fontSize(24).font('Helvetica-Bold').text('KiGo', { align: 'center' });
+    doc.fontSize(24).font('Helvetica-Bold').text('PEAK FIT', { align: 'center' });
     doc.moveDown(0.5);
     doc.fontSize(16).font('Helvetica').text('Mijoz ma\'lumotlari', { align: 'center' });
     doc.moveDown(1);
@@ -120,19 +121,21 @@ router.get('/:id/pdf', async (req, res) => {
     }
 
     doc.end();
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-router.post('/:id/pay-debt', async (req, res) => {
+router.post('/:id/pay-debt', auth, async (req, res) => {
   try {
     const { amount, paymentMethod = 'cash' } = req.body;
     if (!amount || Number(amount) <= 0) return res.status(400).json({ message: 'Summa kiritilmagan' });
-    const customer = await Customer.findById(req.params.id);
+    const customer = await Customer.findOne({ _id: req.params.id, club: req.user.club });
     if (!customer) return res.status(404).json({ message: 'Mijoz topilmadi' });
-    if (!req.canAccessBranch(customer.branch)) return res.status(403).json({ message: 'Ruxsat yo\'q' });
     const pay = Math.min(Number(amount), customer.debt);
     await Customer.findByIdAndUpdate(req.params.id, { $inc: { debt: -pay, totalPaid: pay } });
     await Sale.create({
+      club: req.user.club,
       items: [],
       customer: req.params.id,
       total: pay,

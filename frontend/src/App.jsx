@@ -7,8 +7,6 @@ import { TariffsProvider } from './context/TariffsContext';
 import { SmenaProvider } from './context/SmenaContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
-
-import Dashboard from './pages/Dashboard';
 import Kassa from './pages/Kassa';
 import Mijozlar from './pages/Mijozlar';
 import Ombor from './pages/Ombor';
@@ -18,67 +16,65 @@ import Filiallar from './pages/Filiallar';
 import Hisobotlar from './pages/Hisobotlar';
 import Sozlamalar from './pages/Sozlamalar';
 import Profil from './pages/Profil';
-import Viloyatlar from './pages/Viloyatlar';
-import Tumanlar from './pages/Tumanlar';
-import Dillerlar from './pages/Dillerlar';
-import AuditLog from './pages/AuditLog';
 
-// Default landing route per role
-const HOME_BY_ROLE = {
-  superadmin: '/dashboard',
-  admin:      '/dashboard',
-  manager:    '/dashboard',
-  cashier:    '/',
-};
+import PlatformLayout from './fitos/PlatformLayout';
+import FitosViloyatlar from './fitos/pages/Viloyatlar';
+import FitosXizmatlar from './fitos/pages/Xizmatlar';
+import FitosTariflar from './fitos/pages/Tariflar';
+import FitosMijozlar from './fitos/pages/Mijozlar';
+import FitosTolovlar from './fitos/pages/Tolovlar';
+import FitosXabarlar from './fitos/pages/Xabarlar';
+import FitosDiller from './fitos/pages/Diller';
+import FitosSozlamalar from './fitos/pages/Sozlamalar';
 
-// Which routes each role can open. Anything missing → redirected home.
-const ALLOWED = {
-  superadmin: ['*'],
-  admin:      ['/dashboard', '/', '/mijozlar', '/ombor', '/tariflar', '/xodimlar', '/filiallar', '/clublar', '/hisobotlar', '/sozlamalar', '/profil'],
-  manager:    ['/dashboard', '/', '/mijozlar', '/ombor', '/hisobotlar', '/profil'],
-  cashier:    ['/', '/mijozlar', '/profil'],
-};
-
-function PrivateRoute({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
-      <div style={{ color: 'var(--accent)', fontSize: 22, fontWeight: 700 }}>KiGo</div>
+function Loading() {
+  return (
+    <div className="flex items-center justify-center h-screen bg-sidebar">
+      <div className="text-accent text-2xl font-bold animate-pulse tracking-tight">KiGo</div>
     </div>
   );
-  return user ? children : <Navigate to="/login" />;
 }
 
-function RoleGate({ path, children }) {
-  const { user } = useAuth();
-  const role = user?.role || 'cashier';
-  const allowed = ALLOWED[role] || [];
-  if (allowed.includes('*') || allowed.includes(path)) return children;
-  return <Navigate to={HOME_BY_ROLE[role] || '/'} replace />;
+function PrivateRoute({ children, require }) {
+  const { user, loading } = useAuth();
+  if (loading) return <Loading />;
+  if (!user) return <Navigate to="/login" />;
+  if (require === 'platform' && user.role !== 'platformAdmin') return <Navigate to="/" />;
+  if (require === 'club' && user.role === 'platformAdmin') return <Navigate to="/fitos" />;
+  return children;
 }
 
 function AppRoutes() {
-  const { user } = useAuth();
-  const home = HOME_BY_ROLE[user?.role] || '/';
+  const { user, loading } = useAuth();
+  if (loading) return <Loading />;
+
+  const homeFor = (u) => (u?.role === 'platformAdmin' ? '/fitos' : '/');
+
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to={home} /> : <Login />} />
-      <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-        <Route index element={<RoleGate path="/"><Kassa /></RoleGate>} />
-        <Route path="dashboard"  element={<RoleGate path="/dashboard"><Dashboard /></RoleGate>} />
-        <Route path="mijozlar"   element={<RoleGate path="/mijozlar"><Mijozlar /></RoleGate>} />
-        <Route path="ombor"      element={<RoleGate path="/ombor"><Ombor /></RoleGate>} />
-        <Route path="tariflar"   element={<RoleGate path="/tariflar"><Tariflar /></RoleGate>} />
-        <Route path="xodimlar"   element={<RoleGate path="/xodimlar"><Xodimlar /></RoleGate>} />
-        <Route path="filiallar"  element={<RoleGate path="/filiallar"><Filiallar /></RoleGate>} />
-        <Route path="clublar"    element={<RoleGate path="/clublar"><Filiallar /></RoleGate>} />
-        <Route path="hisobotlar" element={<RoleGate path="/hisobotlar"><Hisobotlar /></RoleGate>} />
-        <Route path="sozlamalar" element={<RoleGate path="/sozlamalar"><Sozlamalar /></RoleGate>} />
-        <Route path="profil"     element={<RoleGate path="/profil"><Profil /></RoleGate>} />
-        <Route path="viloyatlar" element={<RoleGate path="/viloyatlar"><Viloyatlar /></RoleGate>} />
-        <Route path="tumanlar"   element={<RoleGate path="/tumanlar"><Tumanlar /></RoleGate>} />
-        <Route path="dillerlar"  element={<RoleGate path="/dillerlar"><Dillerlar /></RoleGate>} />
-        <Route path="audit"      element={<RoleGate path="/audit"><AuditLog /></RoleGate>} />
+      <Route path="/login" element={user ? <Navigate to={homeFor(user)} /> : <Login />} />
+
+      <Route path="/fitos" element={<PrivateRoute require="platform"><PlatformLayout /></PrivateRoute>}>
+        <Route index            element={<FitosViloyatlar />} />
+        <Route path="xizmatlar" element={<FitosXizmatlar />} />
+        <Route path="tariflar"  element={<FitosTariflar />} />
+        <Route path="mijozlar"  element={<FitosMijozlar />} />
+        <Route path="tolovlar"  element={<FitosTolovlar />} />
+        <Route path="xabarlar"  element={<FitosXabarlar />} />
+        <Route path="diller"    element={<FitosDiller />} />
+        <Route path="sozlamalar" element={<FitosSozlamalar />} />
+      </Route>
+
+      <Route path="/" element={<PrivateRoute require="club"><Layout /></PrivateRoute>}>
+        <Route index element={<Kassa />} />
+        <Route path="mijozlar" element={<Mijozlar />} />
+        <Route path="ombor" element={<Ombor />} />
+        <Route path="tariflar" element={<Tariflar />} />
+        <Route path="xodimlar" element={<Xodimlar />} />
+        <Route path="filiallar" element={<Filiallar />} />
+        <Route path="hisobotlar" element={<Hisobotlar />} />
+        <Route path="sozlamalar" element={<Sozlamalar />} />
+        <Route path="profil" element={<Profil />} />
       </Route>
     </Routes>
   );
@@ -89,15 +85,15 @@ export default function App() {
     <AuthProvider>
       <BranchProvider>
         <TariffsProvider>
-          <SmenaProvider>
-            <BrowserRouter>
-              <Toaster
-                position="top-right"
-                toastOptions={{ style: { background: '#1C1917', color: '#fff', border: '1px solid #16A34A' } }}
-              />
-              <AppRoutes />
-            </BrowserRouter>
-          </SmenaProvider>
+        <SmenaProvider>
+        <BrowserRouter>
+          <Toaster
+            position="top-right"
+            toastOptions={{ style: { background: '#0f172a', color: '#fff', border: '1px solid #22c55e' } }}
+          />
+          <AppRoutes />
+        </BrowserRouter>
+        </SmenaProvider>
         </TariffsProvider>
       </BranchProvider>
     </AuthProvider>

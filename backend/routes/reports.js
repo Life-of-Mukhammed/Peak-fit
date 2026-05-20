@@ -3,25 +3,22 @@ const mongoose = require('mongoose');
 const Sale = require('../models/Sale');
 const Customer = require('../models/Customer');
 const Branch = require('../models/Branch');
-const auth = require('../middleware/auth');
-const scope = require('../middleware/scope');
+const auth = require('../middleware/clubAuth');
 
-router.use(auth, scope);
-
-// Combine branch query filter with scope.
-// If user picked a branch and has access, use it.
-// Otherwise fall back to the user's scope (all-their-branches).
-function scopedBranchFilter(req) {
-  const { branchId } = req.query;
-  if (branchId && req.canAccessBranch(branchId)) {
-    return { branch: new mongoose.Types.ObjectId(branchId) };
-  }
-  return req.scopeFilterOrNull('branch');
+function clubFilter(req) {
+  return { club: new mongoose.Types.ObjectId(req.user.club) };
 }
 
-router.get('/summary', async (req, res) => {
+function branchFilter(branchId) {
+  if (!branchId) return {};
+  return { branch: new mongoose.Types.ObjectId(branchId) };
+}
+
+router.get('/summary', auth, async (req, res) => {
   try {
-    const bf = scopedBranchFilter(req);
+    const { branchId } = req.query;
+    const cf = clubFilter(req);
+    const bf = branchFilter(branchId);
 
     const now = new Date();
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
@@ -29,35 +26,33 @@ router.get('/summary', async (req, res) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-    const [todaySales, monthlySales, activeCustomers, debtors, totalCustomers] = await Promise.all([
-      Sale.find({ ...bf, createdAt: { $gte: todayStart, $lte: todayEnd } }),
-      Sale.find({ ...bf, createdAt: { $gte: monthStart, $lte: monthEnd } }),
-      Customer.countDocuments({ ...bf, 'activeTariff.isActive': true }),
-      Customer.find({ ...bf, debt: { $gt: 0 } }),
-      Customer.countDocuments(bf),
+    const [todaySales, monthlySales, activeCustomers, debtors] = await Promise.all([
+      Sale.find({ ...cf, ...bf, createdAt: { $gte: todayStart, $lte: todayEnd } }),
+      Sale.find({ ...cf, ...bf, createdAt: { $gte: monthStart, $lte: monthEnd } }),
+      Customer.countDocuments({ ...cf, ...bf, 'activeTariff.isActive': true }),
+      Customer.find({ ...cf, ...bf, debt: { $gt: 0 } }),
     ]);
 
     res.json({
       todayTotal:          todaySales.reduce((s, x) => s + x.total, 0),
       monthlyTotal:        monthlySales.reduce((s, x) => s + x.total, 0),
-      monthTotal:          monthlySales.reduce((s, x) => s + x.total, 0), // alias for dashboards
       activeSubscriptions: activeCustomers,
       totalDebt:           debtors.reduce((s, x) => s + x.debt, 0),
       debtorCount:         debtors.length,
-      totalCustomers,
     });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.get('/daily', async (req, res) => {
+router.get('/daily', auth, async (req, res) => {
   try {
-    const { date } = req.query;
-    const bf = scopedBranchFilter(req);
+    const { date, branchId } = req.query;
+    const cf = clubFilter(req);
+    const bf = branchFilter(branchId);
     const d = date ? new Date(date) : new Date();
     const start = new Date(d); start.setHours(0, 0, 0, 0);
     const end   = new Date(d); end.setHours(23, 59, 59, 999);
 
-    const sales = await Sale.find({ ...bf, createdAt: { $gte: start, $lte: end } })
+    const sales = await Sale.find({ ...cf, ...bf, createdAt: { $gte: start, $lte: end } })
       .populate('customer', 'name surname')
       .populate('cashier', 'name surname')
       .sort({ createdAt: -1 });
@@ -66,31 +61,35 @@ router.get('/daily', async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.get('/weekly', async (req, res) => {
+router.get('/weekly', auth, async (req, res) => {
   try {
-    const bf = scopedBranchFilter(req);
+    const { branchId } = req.query;
+    const cf = clubFilter(req);
+    const bf = branchFilter(branchId);
     const now = new Date();
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now); d.setDate(d.getDate() - i);
       const start = new Date(d); start.setHours(0, 0, 0, 0);
       const end   = new Date(d); end.setHours(23, 59, 59, 999);
-      const sales = await Sale.find({ ...bf, createdAt: { $gte: start, $lte: end } });
+      const sales = await Sale.find({ ...cf, ...bf, createdAt: { $gte: start, $lte: end } });
       days.push({ date: d.toISOString().split('T')[0], total: sales.reduce((s, x) => s + x.total, 0), count: sales.length });
     }
     res.json(days);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.get('/monthly', async (req, res) => {
+router.get('/monthly', auth, async (req, res) => {
   try {
-    const bf = scopedBranchFilter(req);
+    const { branchId } = req.query;
+    const cf = clubFilter(req);
+    const bf = branchFilter(branchId);
     const now = new Date();
     const months = [];
     for (let i = 11; i >= 0; i--) {
       const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const end   = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
-      const sales = await Sale.find({ ...bf, createdAt: { $gte: start, $lte: end } });
+      const sales = await Sale.find({ ...cf, ...bf, createdAt: { $gte: start, $lte: end } });
       months.push({
         month: start.toLocaleString('uz-UZ', { month: 'long', year: 'numeric' }),
         total: sales.reduce((s, x) => s + x.total, 0),
@@ -101,11 +100,12 @@ router.get('/monthly', async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.get('/by-cashier', async (req, res) => {
+router.get('/by-cashier', auth, async (req, res) => {
   try {
-    const { from, to } = req.query;
-    const match = scopedBranchFilter(req);
+    const { from, to, branchId } = req.query;
+    const match = { club: new mongoose.Types.ObjectId(req.user.club) };
     if (from && to) match.createdAt = { $gte: new Date(from), $lte: new Date(to) };
+    if (branchId) match.branch = new mongoose.Types.ObjectId(branchId);
 
     const result = await Sale.aggregate([
       { $match: match },
@@ -119,26 +119,28 @@ router.get('/by-cashier', async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.get('/analytics', async (req, res) => {
+router.get('/analytics', auth, async (req, res) => {
   try {
-    const bf = scopedBranchFilter(req);
+    const { branchId } = req.query;
+    const cf = clubFilter(req);
+    const bf = branchFilter(branchId);
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const prevMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
     const [salesThisMonth, salesPrevMonth] = await Promise.all([
-      Sale.find({ ...bf, createdAt: { $gte: monthStart } })
-        .populate('customer', 'name surname customerId phone totalPaid')
+      Sale.find({ ...cf, ...bf, createdAt: { $gte: monthStart } })
+        .populate('customer', 'name surname customerId')
         .populate('tariff', 'name'),
-      Sale.find({ ...bf, createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } }),
+      Sale.find({ ...cf, ...bf, createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } }),
     ]);
 
-    const paymentBreakdown = {
-      cash: salesThisMonth.filter(s => s.paymentMethod === 'cash').reduce((sum, s) => sum + s.total, 0),
-      card: salesThisMonth.filter(s => s.paymentMethod === 'card').reduce((sum, s) => sum + s.total, 0),
-      debt: salesThisMonth.filter(s => s.paymentMethod === 'debt').reduce((sum, s) => sum + s.total, 0),
-    };
+    const paymentBreakdown = ['cash', 'card', 'debt'].map(method => ({
+      method,
+      total: salesThisMonth.filter(s => s.paymentMethod === method).reduce((sum, s) => sum + s.total, 0),
+      count: salesThisMonth.filter(s => s.paymentMethod === method).length,
+    }));
 
     const productCounts = {};
     salesThisMonth.forEach(s => {
@@ -166,15 +168,13 @@ router.get('/analytics', async (req, res) => {
       customerCounts[k] = customerCounts[k] || {
         name: `${s.customer.name} ${s.customer.surname}`,
         customerId: s.customer.customerId,
-        phone: s.customer.phone,
-        totalPaid: s.customer.totalPaid,
         count: 0,
         total: 0,
       };
       customerCounts[k].count += 1;
       customerCounts[k].total += s.total;
     });
-    const topCustomers = Object.values(customerCounts).sort((a, b) => b.total - a.total).slice(0, 8);
+    const topCustomers = Object.values(customerCounts).sort((a, b) => b.total - a.total).slice(0, 5);
 
     const monthlyTotal = salesThisMonth.reduce((s, x) => s + x.total, 0);
     const prevMonthlyTotal = salesPrevMonth.reduce((s, x) => s + x.total, 0);
@@ -183,6 +183,7 @@ router.get('/analytics', async (req, res) => {
       : (monthlyTotal > 0 ? 100 : 0);
 
     const newCustomersThisMonth = await Customer.countDocuments({
+      ...cf,
       ...bf,
       createdAt: { $gte: monthStart },
     });
@@ -201,10 +202,9 @@ router.get('/analytics', async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// Per-branch summary — also scoped
-router.get('/by-branch', async (req, res) => {
+router.get('/by-branch', auth, async (req, res) => {
   try {
-    const branches = await Branch.find({ ...req.scopeFilter('_id'), isActive: true });
+    const branches = await Branch.find({ club: req.user.club, isActive: true });
     const now = new Date();
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
     const todayEnd   = new Date(now); todayEnd.setHours(23, 59, 59, 999);
@@ -212,7 +212,7 @@ router.get('/by-branch', async (req, res) => {
     const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
     const results = await Promise.all(branches.map(async (b) => {
-      const bf = { branch: b._id };
+      const bf = { club: req.user.club, branch: b._id };
       const [todaySales, monthlySales, activeCustomers, debtors, totalCustomers] = await Promise.all([
         Sale.find({ ...bf, createdAt: { $gte: todayStart, $lte: todayEnd } }),
         Sale.find({ ...bf, createdAt: { $gte: monthStart, $lte: monthEnd } }),

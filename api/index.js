@@ -1,5 +1,7 @@
-const mongoose = require('mongoose');
+const mongoose = require('../backend/node_modules/mongoose');
 const app = require('../backend/server');
+
+mongoose.set('bufferCommands', false);
 
 if (!global._mongooseCache) {
   global._mongooseCache = { conn: null, promise: null };
@@ -22,9 +24,10 @@ const connectDB = async () => {
 
     cache.promise = mongoose
       .connect(uri, {
-        serverSelectionTimeoutMS: 5000,
-        connectTimeoutMS: 5000,
+        serverSelectionTimeoutMS: 15000,
+        connectTimeoutMS: 15000,
         socketTimeoutMS: 30000,
+        maxPoolSize: 5,
       })
       .then((m) => {
         cache.conn = m;
@@ -45,7 +48,11 @@ module.exports = async (req, res) => {
     await connectDB();
     app(req, res);
   } catch (err) {
-    console.error('DB connection error:', err.message);
-    res.status(500).json({ message: 'DB Error: ' + err.message });
+    console.error('DB connection error:', err.name, err.message);
+    res.status(500).json({
+      message: 'DB Error',
+      name: err.name,
+      detail: err.message,
+    });
   }
 };
